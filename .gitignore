@@ -1,0 +1,13 @@
+# Сборка и временные файлы Visual Studio
+.vs/
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+*.vshost.*
+
+# Модель Vosk (тяжелые файлы)
+model/
+
+# Результаты NuGet (библиотеки сами скачаются у других)
+packages/

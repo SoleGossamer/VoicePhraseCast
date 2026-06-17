@@ -1,2 +1,25 @@
-# Auto detect text files and perform LF normalization
+# 1. Автоматическое управление окончаниями строк для текстовых файлов
 * text=auto
+
+# 2. Четко прописываем, что исходный код — это текст, и заставляем Git нормализовать CRLF (Windows)
+*.cs text diff=csharp
+*.xaml text eol=crlf
+*.sln text eol=crlf
+*.csproj text eol=crlf
+*.config text eol=crlf
+*.json text eol=crlf
+*.md text
+
+# 3. Бинарные файлы (они не должны обрабатываться как текст, чтобы Git их не испортил)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.wav binary
+*.mp3 binary
+*.mpeg binary
+*.dll binary
+*.exe binary
+
+# 4. Файлы разметки для Obsidian (на случай, если ведешь документацию или базу знаний в репозитории)
+*.md text eol=lf
