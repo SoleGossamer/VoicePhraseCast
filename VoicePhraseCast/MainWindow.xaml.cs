@@ -45,7 +45,7 @@ namespace VoicePhraseCast
                 Dispatcher.BeginInvoke(new Action(() => {
                     RecognizedText.Text = "Слышу: ...";
 
-                    // Переписываем статус на "РАБОТАЕТ" только если там не горит сообщение об остановке
+                    // Сброс статусных сообщений до исходного рабочего состояния
                     if (StatusText.Text != "Воспроизведение остановлено" && StatusText.Text != "Воспроизведение остановлено пользователем")
                     {
                         StatusText.Text = "Статус: РАБОТАЕТ";
@@ -53,7 +53,7 @@ namespace VoicePhraseCast
                 }));
             };
 
-            // Подписка на промежуточные результаты распознавания (вывод текста на экран "на лету")
+            // Подписка на промежуточные результаты распознавания для вывода текста в реальном времени
             _processor.OnPhraseRecognized += (text) => {
                 this.Dispatcher.BeginInvoke(new Action(() => {
                     RecognizedText.Text = $"Слышу: {text}";
@@ -62,7 +62,7 @@ namespace VoicePhraseCast
 
             Task.Run(async () => await _processor.InitializeVoskAsync());
 
-            // Загрузка путей и кнопок
+            // Загрузка сохраненных путей к директориям и конфигурации горячих клавиш
             string savedPath = VoicePhraseCast.Properties.Settings.Default.LastPath;
             if (!string.IsNullOrEmpty(savedPath))
             {
@@ -77,11 +77,11 @@ namespace VoicePhraseCast
             if (!string.IsNullOrEmpty(emuKey)) TxtEmulationKey.Text = emuKey;
             if (!string.IsNullOrEmpty(stopKey)) TxtStopKey.Text = stopKey;
 
-            // --- ЗАГРУЖАЕМ ГРОМКОСТЬ ИЗ НАСТРОЕК (в таблице Settings верни дефолт 1) ---
+            // Загрузка параметров громкости из пользовательских настроек
             float savedVolumeMic = VoicePhraseCast.Properties.Settings.Default.VolumeMic;
             float savedVolumeCable = VoicePhraseCast.Properties.Settings.Default.VolumeCable;
 
-            // Выставляем слайдеры. События сработают, но наш флаг _isDataLoaded их заблокирует!
+            // Инициализация значений слайдеров (события ValueChanged блокируются флагом _isDataLoaded)
             SliderMic.Value = savedVolumeMic;
             SliderCable.Value = savedVolumeCable;
 
@@ -94,13 +94,13 @@ namespace VoicePhraseCast
                 _processor.VolumeCable = savedVolumeCable;
             }
 
-            // Загружаем сохраненный статус мониторинга
+            // Загрузка и инициализация состояния аппаратного мониторинга звука
             bool savedMonitorState = VoicePhraseCast.Properties.Settings.Default.IsMonitorEnabled;
 
-            // Выставляем галочку в интерфейсе
+            // Активация состояния в интерфейсе
             ChkMonitor.IsChecked = savedMonitorState;
 
-            // Сразу передаем её значение в процессор
+            // Передача его значение в процессор
             if (_processor != null)
             {
                 _processor.IsMonitoringEnabled = savedMonitorState;
@@ -108,7 +108,7 @@ namespace VoicePhraseCast
 
             InitTrayIcon();
 
-            // Загружаем статус эмуляции рации
+            // Загрузка и инициализация статуса программной эмуляции радиостанции
             bool savedEmulationState = VoicePhraseCast.Properties.Settings.Default.IsEmulationEnabled;
             ChkEmulationEnabled.IsChecked = savedEmulationState;
 
@@ -119,16 +119,16 @@ namespace VoicePhraseCast
 
             SettingsPanel.Height = 0;
 
-            // ВСЁ ГОТОВО: Включаем зеленый свет для сохранения!
+            // Инициализация данных завершена, разрешение на перезапись конфигурационных файлов активировано
             _isDataLoaded = true;
         }
 
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
-            // Отключаем хук перед выходом
+            // Освобождение системного хука клавиатуры перед завершением процесса
             _hook.Unhook();
 
-            // Останавливаем аудио-процессор
+            // Остановка всех потоков аудиопроцессора
             _processor.Stop();
 
             base.OnClosing(e);
@@ -142,7 +142,7 @@ namespace VoicePhraseCast
 
             try
             {
-                // Загружаем твоего пиксельного мага напрямую из встроенных ресурсов WPF
+                // Загрузка графического ресурса иконки приложения из встроенных ресурсов сборки
                 System.Windows.Resources.StreamResourceInfo sri = System.Windows.Application.GetResourceStream(
                     new Uri("pack://application:,,,/Resources/VoicePhraseCast.ico")
                 );
@@ -154,23 +154,22 @@ namespace VoicePhraseCast
             }
             catch (Exception ex)
             {
-                // Если забыл настроить Build Action: Resource или папка называется иначе, 
-                // приложение не упадет, а аккуратно подставит дефолтную иконку сборки
+                // Резервный перехват: извлечение стандартной иконки сборки при сбое загрузки кастомного ресурса
                 System.Windows.MessageBox.Show($"Не удалось загрузить мага в трей: {ex.Message}\nБудет использована стандартная иконка.");
                 _notifyIcon.Icon = System.Drawing.Icon.ExtractAssociatedIcon(System.Reflection.Assembly.GetExecutingAssembly().Location);
             }
 
-            // Текст при наведении на мага в трее
+            // Текст при наведении на иконку в трее
             _notifyIcon.Text = "VoicePhraseCast вещает";
 
-            // При двойном клике по иконке в трее — разворачиваем окно обратно
+            // Восстановление нормального состояния окна при двойном клике по иконке трея
             _notifyIcon.DoubleClick += (s, e) =>
             {
                 this.Show();
                 this.WindowState = WindowState.Normal;
             };
 
-            // Создаем контекстное меню для трея (по правому клику)
+            // Инициализация контекстного меню системного трея (ПКМ по иконке)
             var contextMenu = new System.Windows.Forms.ContextMenuStrip();
             contextMenu.Items.Add("Развернуть", null, (s, e) => {
                 this.Show();
@@ -183,8 +182,7 @@ namespace VoicePhraseCast
 
             _notifyIcon.ContextMenuStrip = contextMenu;
 
-            // Важно: делаем иконку видимой сразу при старте, если это необходимо, 
-            // либо оставляем её включение только при сворачивании (у тебя логика включения ниже в OnStateChanged)
+            // Инициализация видимости иконки трея при старте приложения (основное переключение состояния происходит в OnStateChanged)
             _notifyIcon.Visible = true;
         }
 
@@ -192,13 +190,13 @@ namespace VoicePhraseCast
         {
             if (this.WindowState == WindowState.Minimized)
             {
-                this.Hide(); // Прячем окно с панели задач
+                this.Hide(); // Удаление окна с панели задач при сворачивании
                 if (_notifyIcon != null)
                 {
-                    _notifyIcon.Visible = true; // Показываем иконку в трее
+                    _notifyIcon.Visible = true; // Отображение иконки в трее
 
-                    // Показываем красивое всплывающее уведомление Windows при первом сворачивании
-                    _notifyIcon.ShowBalloonTip(2000, "Программа свернута", "Глобальный перехват фраз продолжает работать в фоне.", System.Windows.Forms.ToolTipIcon.Info);
+                    // Вывод системного уведомления ОС об активности фонового процесса
+                    _notifyIcon.ShowBalloonTip(2000, "Программа свёрнута", "Глобальный перехват фраз продолжает работать в фоне.", System.Windows.Forms.ToolTipIcon.Info);
                 }
             }
             base.OnStateChanged(e);
@@ -206,7 +204,7 @@ namespace VoicePhraseCast
 
         protected override void OnClosed(EventArgs e)
         {
-            // Обязательно уничтожаем иконку при закрытии, иначе она "зависнет" в трее до перезагрузки проводника
+            // Принудительное уничтожение дескриптора иконки трея во избежание зависания процесса в проводнике Windows
             if (_notifyIcon != null)
             {
                 _notifyIcon.Dispose();
@@ -218,39 +216,38 @@ namespace VoicePhraseCast
         {
             if (_isSettingsExpanded)
             {
-                // 1. Фиксируем текущую реальную высоту в пикселях перед закрытием
+                // Фиксация текущей реальной высоты компонента перед запуском анимации закрытия
                 SettingsPanel.Height = SettingsPanel.ActualHeight;
 
-                // 2. Отключаем удерживание свойства анимацией (сбрасываем старый хук)
+                // Удаление текущих анимационных привязок свойства Height
                 SettingsPanel.BeginAnimation(HeightProperty, null);
 
-                // 3. Плавно сворачиваем панель до 0
+                // Плавное свёртывание панели до нулевой высоты
                 System.Windows.Media.Animation.DoubleAnimation anim = new System.Windows.Media.Animation.DoubleAnimation(0, TimeSpan.FromSeconds(0.25));
                 SettingsPanel.BeginAnimation(HeightProperty, anim);
                 _isSettingsExpanded = false;
             }
             else
             {
-                // 1. СБРОС АНИМАЦИИ: Освобождаем свойство Height от предыдущих запусков
+                // Сброс старых анимаций для освобождения свойства Height
                 SettingsPanel.BeginAnimation(HeightProperty, null);
 
-                // 2. Временно сбрасываем высоту в Auto для проведения точных расчетов
+                // Временный перевод логики расчета высоты в режим Auto
                 SettingsPanel.Height = double.NaN;
 
-                // 3. Принудительно обновляем дерево элементов, чтобы StackPanel внутри развернулся на максимум
+                // Принудительный пересчет дерева элементов графического интерфейса для определения размеров контента
                 SettingsPanel.UpdateLayout();
 
-                // 4. Замеряем, сколько честных пикселей занимает весь контент настроек
+                // Измерение фактической целевой высоты развернутого StackPanel
                 double targetHeight = SettingsPanel.DesiredSize.Height;
 
-                // 5. Возвращаем высоту в 0 непосредственно перед стартом, чтобы избежать визуального скачка
+                // Предотвращение визуального скачка интерфейса непосредственным обнулением высоты перед стартом
                 SettingsPanel.Height = 0;
 
-                // 6. Конфигурируем и запускаем анимацию раскрытия
+                // Настройка и инициализация анимации плавного раскрытия компонента
                 System.Windows.Media.Animation.DoubleAnimation anim = new System.Windows.Media.Animation.DoubleAnimation(0, targetHeight, TimeSpan.FromSeconds(0.25));
 
-                // 7. Как только панель полностью раскрылась, сбрасываем анимацию в null и ставим Auto (double.NaN),
-                // чтобы окно оставалось гибким и динамически адаптировалось под контент в будущем
+                // По завершении анимации свойство освобождается и переводится в Auto для обеспечения динамической гибкости
                 anim.Completed += (s, args) =>
                 {
                     SettingsPanel.BeginAnimation(HeightProperty, null);
@@ -279,21 +276,20 @@ namespace VoicePhraseCast
             }
             else
             {
-                // Если кабель найден, выводим подсказку, какой именно кабель выбрала программа
-                // Чтобы пользователь точно знал, что выбрать в настройках игры!
+                // Формирование строкового имени выбранного аудиокабеля для отображения в интерфейсе пользователя
                 string cableName = indices.cableId == 5 ? "CABLE In 16ch Output" : "CABLE Output";
 
                 HintText.Text = $"💡 Для работы в игре: зайдите в настройки звука игры и выберите микрофон: '{cableName}'";
             }
-            // Берем выбранные устройства напрямую из интерфейса
+            // Валидация выбора аудиоустройств в комбобоксах UI-интерфейса
             if (MicComboBox.SelectedItem is AudioDevice mic &&
                 CableComboBox.SelectedItem is AudioDevice cable &&
                 MonitorComboBox.SelectedItem is AudioDevice monitor)
             {
-                // Передаем их ID в метод Start
+                // Передача ID аудиоустройств в метод Start
                 _processor.Start(mic.Id, cable.Id, monitor.Id);
 
-                // Обновляем статус (для красоты)
+                // Обновляем статус (для наглядности)
                 StatusText.Text = "Статус: РАБОТАЕТ";
                 StatusText.Foreground = System.Windows.Media.Brushes.Green;
             }
@@ -316,22 +312,23 @@ namespace VoicePhraseCast
 
         private void LoadDevices()
         {
-            // Очистим на всякий случай
+            // Очистка полей комбобоксов перед загрузкой новых данных
             MicComboBox.Items.Clear();
             CableComboBox.Items.Clear();
             MonitorComboBox.Items.Clear();
 
-            // Явно говорим, что показывать Имя
+            // Явно указание свойства отображения для комбобоксов, чтобы они показывали имена устройств
             MicComboBox.DisplayMemberPath = "Name";
             CableComboBox.DisplayMemberPath = "Name";
             MonitorComboBox.DisplayMemberPath = "Name";
-            // Заполняем микрофоны
+
+            // Перечисление и заполнение доступных физических устройств записи звука
             for (int i = 0; i < WaveIn.DeviceCount; i++)
             {
                 MicComboBox.Items.Add(new AudioDevice { Id = i, Name = WaveIn.GetCapabilities(i).ProductName });
             }
 
-            // Заполняем выходы (динамики/кабели)
+            // Перечисление и заполнение доступных аудиовыходов (микшеры, кабели)
             for (int i = 0; i < WaveOut.DeviceCount; i++)
             {
                 CableComboBox.Items.Add(new AudioDevice { Id = i, Name = WaveOut.GetCapabilities(i).ProductName });
@@ -342,7 +339,7 @@ namespace VoicePhraseCast
                 MonitorComboBox.Items.Add(new AudioDevice { Id = i, Name = WaveOut.GetCapabilities(i).ProductName });
             }
 
-            // Пытаемся выбрать твои девайсы автоматически
+            // Автоматическое позиционирование индексов комбобоксов под аппаратные аудиоустройства по умолчанию
             MicComboBox.SelectedIndex = MicComboBox.Items.Cast<AudioDevice>()
                 .ToList().FindIndex(d => d.Name.Contains("HyperX"));
             CableComboBox.SelectedIndex = CableComboBox.Items.Cast<AudioDevice>()
@@ -353,14 +350,13 @@ namespace VoicePhraseCast
 
         private void BtnBrowse_Click(object sender, RoutedEventArgs e)
         {
-            // Используем WinForms диалог (нужно добавить ссылку на System.Windows.Forms или Microsoft.Win32)
             var dialog = new Microsoft.Win32.OpenFolderDialog();
             if (dialog.ShowDialog() == true)
             {
                 TxtPath.Text = dialog.FolderName;
                 _processor.LoadPhrases(dialog.FolderName);
 
-                // Сохраняем путь навсегда
+                // Сохранение выбранного пути в постоянную конфигурацию .NET
                 VoicePhraseCast.Properties.Settings.Default.LastPath = dialog.FolderName;
                 VoicePhraseCast.Properties.Settings.Default.Save();
             }
@@ -376,7 +372,7 @@ namespace VoicePhraseCast
             {
                 try
                 {
-                    // 1. Получаем актуальные коды клавиш из текстовых полей
+                    // Извлечение и парсинг актуальных кодов виртуальных клавиш из текстовых полей интерфейса
                     int activationVkCode = KeyInterop.VirtualKeyFromKey((Key)Enum.Parse(typeof(Key), TxtActivationKey.Text, true));
                     byte emulationVkCode = (byte)KeyInterop.VirtualKeyFromKey((Key)Enum.Parse(typeof(Key), TxtEmulationKey.Text, true));
                     int stopVkCode = KeyInterop.VirtualKeyFromKey((Key)Enum.Parse(typeof(Key), TxtStopKey.Text, true));
@@ -387,11 +383,11 @@ namespace VoicePhraseCast
                     // Очищаем старые подписки, чтобы избежать дублирования
                     _hook.ClearSubscribers();
 
-                    // 2. Подписка на зажатие (активация режима прослушивания ИИ)
+                    // Подписка на событие зажатия горячей клавиши (активация записи потока и прослушивания ИИ)
                     _hook.OnKeyDown += (vkCode) => {
                         if (vkCode == activationVkCode)
                         {
-                            if (_isKeyAlreadyPressed) return; // Игнорируем автоповтор зажатой клавиши
+                            if (_isKeyAlreadyPressed) return; // Игнорирование аппаратного автоповтора зажатой клавиши ОС
                             _isKeyAlreadyPressed = true;
 
                             Dispatcher.BeginInvoke(new Action(() => {
@@ -408,8 +404,7 @@ namespace VoicePhraseCast
                         }
                     };
 
-                    // 3. Подписка на отпускание кнопки (завершение записи и сопоставление фразы)
-                    // 3. Подписка на отпускание кнопки
+                    // Подписка на событие отпускания горячей клавиши (остановка записи, извлечение буфера и фильтрация фразы)
                     _hook.OnKeyUp += (vkCode) => {
                         if (vkCode == activationVkCode)
                         {
@@ -419,20 +414,20 @@ namespace VoicePhraseCast
                                 _processor.ToggleVosk(false);
                                 StatusText.Text = $"Статус: РАБОТАЕТ ({TxtActivationKey.Text} активна)";
 
-                                // 1. Проверяем чистый буфер Vosk
+                                // Извлечение финального текста из внутреннего буфера Vosk
                                 string finalSpeech = _processor.GetFinalText()?.Trim() ?? "";
 
-                                // 2. Если в буфере пусто, берем текст с экрана
+                                // Резервный перехват промежуточного экранного текста при пустом итоговом буфере
                                 if (string.IsNullOrEmpty(finalSpeech))
                                 {
-                                    // ОЧИЩАЕМ И ОТ "Слышу: ", И ОТ "Финально: ", чтобы текст не дублировался циклично!
+                                    // Очистка служебных префиксов интерфейса во избежание циклического дублирования строк
                                     finalSpeech = RecognizedText.Text
                                         .Replace("Слышу: ", "")
                                         .Replace("Финально: ", "")
                                         .Trim();
                                 }
 
-                                // 3. Запускаем обработку
+                                // Инициализация конвейера нечеткого сопоставления при наличии валидного текста
                                 if (!string.IsNullOrEmpty(finalSpeech))
                                 {
                                     RecognizedText.Text = $"Финально: {finalSpeech}";
@@ -442,36 +437,33 @@ namespace VoicePhraseCast
                         }
                     };
 
-                    // Синхронизируем состояние мониторинга звука в наушниках
+                    // Синхронизация состояния мониторинга звука в наушниках
                     _processor.IsMonitoringEnabled = ChkMonitor.IsChecked ?? false;
 
-                    // 4. Инициализация модели Vosk
+                    // Загрузка и инициализация языковых библиотек Vosk
                     string modelPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "model");
                     _processor.InitVosk(modelPath);
 
-
-
-                    // 5. РЕШЕНИЕ ПРОБЛЕМЫ ИНДЕКСОВ:
-                    // Просим процессор автоматически найти настоящие, железные индексы устройств Windows
+                    // Автоматическое определение реальных аппаратных индексов аудиоустройств ввода-вывода Windows
                     var realIndices = _processor.GetDeviceIndices();
 
-                    // Если они нашлись (-1 означает, что не найдено) — используем их, иначе страхуемся комбобоксом
+                    // Если аппартные индексы нашлись (-1 означает, что не найдено), тогда используются они, иначе - комбобоксы
                     int finalMicId = realIndices.micId != -1 ? realIndices.micId : mic.Id;
                     int finalCableId = realIndices.cableId != -1 ? realIndices.cableId : cable.Id;
                     int finalMonitorId = monitor.Id;
 
-                    // Запускаем аудио-потоки на проверенных ID и ставим глобальный хук клавиш
+                    // Активация аудиопотоков и установка глобального низкоуровневого хука клавиатуры
                     _processor.Start(finalMicId, finalCableId, finalMonitorId);
                     _hook.SetHook();
 
-                    // Фиксируем, что мост запущен
+                    // Фиксация состояния работы моста для блокировки повторного запуска
                     _isBridgeRunning = true;
 
-                    // Обновление интерфейса приложения
+                    // Визуальное обновление элементов управления интерфейса
                     StatusText.Text = $"Статус: РАБОТАЕТ ({TxtActivationKey.Text} активна)";
                     StatusText.Foreground = System.Windows.Media.Brushes.Green;
 
-                    // Вместо BtnStart.IsEnabled = false делаем визуальное переключение:
+                    // Визуальное обновление кнопки "Старт" для индикации активного состояния
                     BtnStart.Content = "РАБОТАЕТ";
                     var greenColor = (Color)System.Windows.Media.ColorConverter.ConvertFromString("#15803D");
                     BtnStart.Background = new SolidColorBrush(greenColor);
@@ -479,7 +471,7 @@ namespace VoicePhraseCast
 
                     BtnStop.IsEnabled = true;
 
-                    // Визуально блокируем поля ввода, чтобы они стали серыми и недоступными для фокуса
+                    // Деактивация полей ввода для предотвращения случайного сброса клавиш во время работы моста
                     TxtActivationKey.IsEnabled = false;
                     TxtEmulationKey.IsEnabled = false;
                     TxtStopKey.IsEnabled = false;
@@ -496,24 +488,24 @@ namespace VoicePhraseCast
             _hook.Unhook();
             _processor.Stop();
 
-            // Фиксируем, что мост остановлен
+            // Фиксация состояния остановки моста для разрешения повторного запуска
             _isBridgeRunning = false;
 
-            // ОБНОВЛЕНИЕ ИНТЕРФЕЙСА ПРИ ОСТАНОВКЕ
+            // Обновление статуса интерфейса для наглядности
             StatusText.Text = "Статус: Остановлено";
             StatusText.Foreground = System.Windows.Media.Brushes.Red;
 
             BtnStop.IsEnabled = false;
 
-            // ВОЗВРАЩАЕМ ИСХОДНЫЙ ВИД КНОПКЕ СТАРТ
+            // Возврат кнопки "Старт" в исходное состояние для повторного запуска
             BtnStart.Content = "ЗАПУСТИТЬ МОСТ";
 
-            // Сбрасываем цвета к тем, которые прописаны у тебя в XAML по умолчанию
+            // Возврат цветовой схемы кнопки Старт к исходным XAML-значениям по умолчанию
             var defaultColor = (Color)System.Windows.Media.ColorConverter.ConvertFromString("#1E2937");
             BtnStart.Background = new SolidColorBrush(defaultColor);
             BtnStart.Foreground = System.Windows.Media.Brushes.White;
 
-            // Возвращаем доступность полям ввода клавиш
+            // Возврат полей ввода горячих клавиш в активное состояние для редактирования
             TxtActivationKey.IsEnabled = true;
             TxtEmulationKey.IsEnabled = true;
             TxtStopKey.IsEnabled = true;
@@ -523,22 +515,22 @@ namespace VoicePhraseCast
         {
             try
             {
-                // 1. Формируем путь во временной папке Windows (например, AppData\Local\Temp\test_phrase.wav)
+                // Формирование пути к файлу во временной директории операционной системы
                 string tempFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "test_phrase.mpeg");
 
-                // 2. Вытаскиваем файл из встроенных ресурсов сборки (папка Resources внутри проекта)
+                // Извлечение встроенного аудиоресурса из манифеста исполняемого файла сборки
                 Uri resourceUri = new Uri("pack://application:,,,/Resources/Winwyv_levelup_04_ru.mp3.mpeg");
                 var resourceInfo = System.Windows.Application.GetResourceStream(resourceUri);
 
                 if (resourceInfo != null)
                 {
-                    // 3. Копируем байты из exe-файла во временный файл на диске
+                    // Побайтовое копирование аудиоданных из ресурсов во временный файл файловой системы
                     using (var fileStream = System.IO.File.Create(tempFile))
                     {
                         resourceInfo.Stream.CopyTo(fileStream);
                     }
 
-                    // 4. Скармливаем готовый временный путь в твой неизмененный метод PlaySound
+                    // Передача временного файла в метод воспроизведения звука аудиопроцессора
                     if (System.IO.File.Exists(tempFile))
                     {
                         _processor.PlaySound(tempFile);
@@ -561,17 +553,17 @@ namespace VoicePhraseCast
             {
                 bool isEnabled = ChkMonitor.IsChecked ?? false;
 
-                // Меняем состояние в процессоре на лету
+                // Смена флага мониторинга в аудиопроцессоре в реальном времени
                 _processor.IsMonitoringEnabled = isEnabled;
                 _processor.SetMonitoring(isEnabled);
 
-                // Обновляем статус-бар для наглядности
+                // Обновление статусного текста для наглядности
                 StatusText.Text = isEnabled ? "Мониторинг включен" : "Мониторинг выключен";
 
-                // Если данные еще загружаются при старте приложения — не перезаписываем файл
+                // Отмена сохранения в конфигурационный файл, если данные еще не были загружены (чтобы избежать перезаписи при инициализации)
                 if (!_isDataLoaded) return;
 
-                // Сохраняем в конфигурацию .NET
+                // Сохранение состояния мониторинга в конфигурационный файл .NET
                 VoicePhraseCast.Properties.Settings.Default.IsMonitorEnabled = isEnabled;
                 VoicePhraseCast.Properties.Settings.Default.Save();
             }
@@ -583,15 +575,15 @@ namespace VoicePhraseCast
             {
                 bool isEnabled = ChkEmulationEnabled.IsChecked ?? true;
 
-                // Меняем флаг в процессоре на лету
+                // Смена флага эмуляции в аудиопроцессоре в реальном времени
                 _processor.IsEmulationEnabled = isEnabled;
 
-                // Обновляем статус для наглядности
+                // Обновление статусного текста для наглядности
                 StatusText.Text = isEnabled ? "Эмуляция рации активна" : "Эмуляция рации отключена (Стелс-режим)";
 
                 if (!_isDataLoaded) return;
 
-                // Сохраняем в настройки .NET
+                // Сохранение состояния эмуляции в конфигурационный файл .NET
                 VoicePhraseCast.Properties.Settings.Default.IsEmulationEnabled = isEnabled;
                 VoicePhraseCast.Properties.Settings.Default.Save();
             }
@@ -599,28 +591,26 @@ namespace VoicePhraseCast
 
         private void KeyField_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
         {
-            // ЕСЛИ ПРОГРАММА УЖЕ ЗАПУЩЕНА (Кнопка "Старт" отключена) — БЛОКИРУЕМ ИЗМЕНЕНИЯ
+            // Блокировка перехвата клавиатурного ввода, если мост находится в активном состоянии
             if (!BtnStart.IsEnabled)
             {
-                // Не даем WPF обработать нажатие и просто выходим, 
-                // чтобы пользователь не мог случайно сбросить клавишу во время игры
+                // Предотвращение WPF обработать нажатие, чтобы пользователь не мог случайно сбросить клавишу во время работы
                 return;
             }
 
             e.Handled = true;
 
-            // Игнорируем нажатия системных клавиш
+            // Игнорирование служебных навигационных клавиш и модификаторов ОС
             if (e.Key == Key.Tab || e.Key == Key.Capital || e.Key == Key.LeftShift || e.Key == Key.RightShift) return;
 
             var currentTextBox = sender as System.Windows.Controls.TextBox;
             if (currentTextBox == null) return;
 
-            // Определяем нажатую клавишу
+            // Определение фактической клавиши, учитывая системные клавиши (например, Alt)
             Key pressedKey = (e.Key == Key.System) ? e.SystemKey : e.Key;
             string pressedKeyName = pressedKey.ToString();
 
-            // ПРОВЕРКА НА ДУБЛИКАТ
-            // Проверяем, не занята ли эта клавиша в другом поле
+            // Валидация горячих клавиш на предмет пересечения и дублирования значений
             if (currentTextBox == TxtActivationKey && (pressedKeyName == TxtEmulationKey.Text || pressedKeyName == TxtStopKey.Text) ||
           currentTextBox == TxtEmulationKey && (pressedKeyName == TxtActivationKey.Text || pressedKeyName == TxtStopKey.Text) ||
           currentTextBox == TxtStopKey && (pressedKeyName == TxtActivationKey.Text || pressedKeyName == TxtEmulationKey.Text))
@@ -630,13 +620,13 @@ namespace VoicePhraseCast
                 return;
             }
 
-            // Если проверка прошла — обновляем текст
+            // При успешной валидации обновляем текстовое поле с именем нажатой клавиши
             currentTextBox.Text = pressedKeyName;
 
-            // Снимаем фокус
+            // Снятие фокуса с текстового поля, чтобы предотвратить дальнейший ввод и зафиксировать выбранную клавишу
             Keyboard.ClearFocus();
 
-            // Сохраняем настройки
+            // Сохранение настроек
             SaveKeySettings();
         }
 
@@ -647,7 +637,7 @@ namespace VoicePhraseCast
             VoicePhraseCast.Properties.Settings.Default.StopKey = TxtStopKey.Text;
             VoicePhraseCast.Properties.Settings.Default.Save();
 
-            // Сразу обновляем клавишу эмуляции в процессоре, если он запущен
+            // Обновление текущей клавиши эмуляции в аудиопроцессоре, если он уже инициализирован
             if (_processor != null)
             {
                 try
@@ -655,7 +645,7 @@ namespace VoicePhraseCast
                     _processor.CurrentEmulationKey = (byte)KeyInterop.VirtualKeyFromKey(
                         (Key)Enum.Parse(typeof(Key), TxtEmulationKey.Text));
                 }
-                catch { /* На случай пустых полей */ }
+                catch { /* Перехват исключения при обработке незаполненных значений */ }
             }
         }
 
@@ -673,7 +663,7 @@ namespace VoicePhraseCast
                 TxtMicVolumeValue.Text = $"{Math.Round(volume * 100)}%";
             }
 
-            // ЕСЛИ ОКНО ЕЩЕ НЕ ИНИЦИАЛИЗИРОВАЛОСЬ — В ФАЙЛ НЕ ПИШЕМ!
+            // В случае, если окно еще не завершило инициализацию, в конфигурационный файл значения не сохраняются, чтобы избежать перезаписи при старте
             if (!_isDataLoaded) return;
 
             VoicePhraseCast.Properties.Settings.Default.VolumeMic = volume;
@@ -694,7 +684,7 @@ namespace VoicePhraseCast
                 TxtCableVolumeValue.Text = $"{Math.Round(volume * 100)}%";
             }
 
-            // ЕСЛИ ОКНО ЕЩЕ НЕ ИНИЦИАЛИЗИРОВАЛОСЬ — В ФАЙЛ НЕ ПИШЕМ!
+            // В случае, если окно еще не завершило инициализацию, в конфигурационный файл значения не сохраняются, чтобы избежать перезаписи при старте
             if (!_isDataLoaded) return;
 
             VoicePhraseCast.Properties.Settings.Default.VolumeCable = volume;
