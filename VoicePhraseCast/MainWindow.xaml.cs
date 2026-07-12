@@ -444,16 +444,8 @@ namespace VoicePhraseCast
                     string modelPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "model");
                     _processor.InitVosk(modelPath);
 
-                    // Автоматическое определение реальных аппаратных индексов аудиоустройств ввода-вывода Windows
-                    var realIndices = _processor.GetDeviceIndices();
-
-                    // Если аппартные индексы нашлись (-1 означает, что не найдено), тогда используются они, иначе - комбобоксы
-                    int finalMicId = realIndices.micId != -1 ? realIndices.micId : mic.Id;
-                    int finalCableId = realIndices.cableId != -1 ? realIndices.cableId : cable.Id;
-                    int finalMonitorId = monitor.Id;
-
                     // Активация аудиопотоков и установка глобального низкоуровневого хука клавиатуры
-                    _processor.Start(finalMicId, finalCableId, finalMonitorId);
+                    _processor.Start(mic.Id, cable.Id, monitor.Id);
                     _hook.SetHook();
 
                     // Фиксация состояния работы моста для блокировки повторного запуска
