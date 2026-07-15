@@ -261,7 +261,24 @@
                           FontWeight="SemiBold"
                           Margin="0,4,0,4"
                           IsChecked="True"
-                          Click="ChkEmulationEnabled_Click"/>       
+                          Click="ChkEmulationEnabled_Click"/>
+                    <CheckBox x:Name="ChkAutostartWindows" 
+                              Content="Запускать программу при старте Windows" 
+                              Foreground="#9CA3AF" 
+                              FontSize="11" 
+                              Margin="0,0,0,4"
+                              VerticalContentAlignment="Center" 
+                              Cursor="Hand" 
+                              Click="ChkAutostartWindows_Click"/>
+
+                    <CheckBox x:Name="ChkAutoBridgeStart" 
+                              Content="Автоматически запускать мост при старте программы" 
+                              Foreground="#9CA3AF" 
+                              FontSize="11" 
+                              Margin="0,0,0,4"
+                              VerticalContentAlignment="Center" 
+                              Cursor="Hand" 
+                              Click="ChkAutoBridgeStart_Click"/>
                 </StackPanel>
 
                 <Border Background="#020406" CornerRadius="2" Padding="6" Margin="0,5,0,0">

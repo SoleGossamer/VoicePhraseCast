@@ -119,6 +119,31 @@ namespace VoicePhraseCast
 
             SettingsPanel.Height = 0;
 
+            // Загрузка состояния автозапуска с Windows
+            bool savedAutostart = VoicePhraseCast.Properties.Settings.Default.IsAutostartWithWindowsEnabled;
+            ChkAutostartWindows.IsChecked = savedAutostart;
+
+           // Если автозапуск включен, метод сам проверит и обновит путь при необходимости
+            if (savedAutostart)
+            {
+                UpdateRegistryAutostart(true);
+            }
+
+            // Загрузка состояния автостарта моста
+            bool savedAutoBridge = VoicePhraseCast.Properties.Settings.Default.IsAutoBridgeStartEnabled;
+            ChkAutoBridgeStart.IsChecked = savedAutoBridge;
+
+            // Если активирован автостарт моста, принудительный запуск после полной отрисовки окна
+            if (savedAutoBridge)
+            {
+                // Использование приоритета Loaded, чтобы UI успел полностью инициализироваться и отрисоваться
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    // Имитация клика по кнопке "Запустить мост"
+                    BtnStart_Click(this, new RoutedEventArgs());
+                }), System.Windows.Threading.DispatcherPriority.Loaded);
+            }
+
             // Инициализация данных завершена, разрешение на перезапись конфигурационных файлов активировано
             _isDataLoaded = true;
         }
@@ -579,6 +604,78 @@ namespace VoicePhraseCast
                 VoicePhraseCast.Properties.Settings.Default.IsEmulationEnabled = isEnabled;
                 VoicePhraseCast.Properties.Settings.Default.Save();
             }
+        }
+
+        private void UpdateRegistryAutostart(bool enable)
+        {
+            string runKeyPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
+            string appName = "VoicePhraseCast";
+            string exePath = System.Environment.ProcessPath ?? string.Empty;
+            string appPath = $"\"{exePath}\"";
+
+            // Если путь к файлу пустой (теоретически), ничего не происходит, чтобы избежать записи некорректного значения в реестр
+            if (string.IsNullOrEmpty(exePath)) return;
+
+            try
+            {
+                using (Microsoft.Win32.RegistryKey key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(runKeyPath, true)!)
+                {
+                    if (key != null)
+                    {
+                        if (enable)
+                        {
+                            // Проверка текущего значение, чтобы не перезаписывать реестр без необходимости
+                            string? existingPath = key.GetValue(appName) as string;
+                            if (existingPath != appPath)
+                            {
+                                key.SetValue(appName, appPath);
+                            }
+                        }
+                        else
+                        {
+                            key.DeleteValue(appName, false);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Показ ошибки только при ручном клике пользователем (когда _isDataLoaded уже true)
+                if (_isDataLoaded)
+                {
+                    System.Windows.MessageBox.Show($"Не удалось изменить настройки автозагрузки в реестре: {ex.Message}",
+                        "Ошибка реестра", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void ChkAutostartWindows_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_isDataLoaded) return;
+
+            bool isEnabled = ChkAutostartWindows.IsChecked ?? false;
+
+            // Сохранение настройки в конфигурационный файл
+            VoicePhraseCast.Properties.Settings.Default.IsAutostartWithWindowsEnabled = isEnabled;
+            VoicePhraseCast.Properties.Settings.Default.Save();
+
+            // Передача состояние чекбокса в метод
+            UpdateRegistryAutostart(isEnabled);
+
+            StatusText.Text = isEnabled ? "Автозапуск с Windows включен" : "Автозапуск с Windows выключен";
+        }
+
+        private void ChkAutoBridgeStart_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_isDataLoaded) return;
+
+            bool isEnabled = ChkAutoBridgeStart.IsChecked ?? false;
+
+            // Сохранение настройки
+            VoicePhraseCast.Properties.Settings.Default.IsAutoBridgeStartEnabled = isEnabled;
+            VoicePhraseCast.Properties.Settings.Default.Save();
+
+            StatusText.Text = isEnabled ? "Автостарт моста включен" : "Автостарт моста выключен";
         }
 
         private void KeyField_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)

@@ -12,10 +12,10 @@
       <Value Profile="(Default)">G</Value>
     </Setting>
     <Setting Name="VolumeMic" Type="System.Single" Scope="User">
-      <Value Profile="(Default)">1</Value>
+      <Value Profile="(Default)">0.5</Value>
     </Setting>
     <Setting Name="VolumeCable" Type="System.Single" Scope="User">
-      <Value Profile="(Default)">1</Value>
+      <Value Profile="(Default)">0.5</Value>
     </Setting>
     <Setting Name="IsMonitorEnabled" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">False</Value>
@@ -25,6 +25,12 @@
     </Setting>
     <Setting Name="IsEmulationEnabled" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">True</Value>
+    </Setting>
+    <Setting Name="IsAutostartWithWindowsEnabled" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="IsAutoBridgeStartEnabled" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
     </Setting>
   </Settings>
 </SettingsFile>
