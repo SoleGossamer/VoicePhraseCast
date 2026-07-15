@@ -779,5 +779,15 @@ namespace VoicePhraseCast
             VoicePhraseCast.Properties.Settings.Default.VolumeCable = volume;
             VoicePhraseCast.Properties.Settings.Default.Save();
         }
+
+        private void BtnMinimize_Click(object sender, RoutedEventArgs e)
+        {
+            this.WindowState = WindowState.Minimized;
+        }
+
+        private void BtnClose_Click(object sender, RoutedEventArgs e)
+        {
+            this.Close();
+        }
     }
 }
