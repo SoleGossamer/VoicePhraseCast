@@ -15,7 +15,7 @@
         UseLayoutRounding="True"
         WindowStartupLocation="CenterScreen" 
         ResizeMode="CanMinimize"
-        ShowInTaskbar="False"
+        ShowInTaskbar="True"
         Icon="pack://application:,,,/Resources/VoicePhraseCast.ico">
 
     <Window.Resources>
