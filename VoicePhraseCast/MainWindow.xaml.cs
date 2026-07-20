@@ -78,6 +78,10 @@ namespace VoicePhraseCast
             if (!string.IsNullOrEmpty(emuKey)) TxtEmulationKey.Text = emuKey;
             if (!string.IsNullOrEmpty(stopKey)) TxtStopKey.Text = stopKey;
 
+            TxtActivationKey.PreviewMouseDown += KeyField_PreviewMouseDown;
+            TxtEmulationKey.PreviewMouseDown += KeyField_PreviewMouseDown;
+            TxtStopKey.PreviewMouseDown += KeyField_PreviewMouseDown;
+
             // Загрузка параметров громкости из пользовательских настроек
             float savedVolumeMic = VoicePhraseCast.Properties.Settings.Default.VolumeMic;
             float savedVolumeCable = VoicePhraseCast.Properties.Settings.Default.VolumeCable;
@@ -411,10 +415,42 @@ namespace VoicePhraseCast
             {
                 try
                 {
+                    // Вспомогательный локальный метод для конвертации строк в реальные vkCode
+                    int GetVkCodeFromString(string keyStr)
+                    {
+                        if (keyStr == "MouseXButton1") return 0x05;
+                        if (keyStr == "MouseXButton2") return 0x06;
+
+                        // Если это одиночный символ (цифра или знак вроде '-', '[', '~')
+                        if (keyStr.Length == 1)
+                        {
+                            char c = keyStr[0];
+                            // Если это цифра, возвращаем префикс "D" для Enum.Parse
+                            if (char.IsDigit(c)) keyStr = "D" + keyStr;
+                            // Если это спецсимвол, восстанавливаем его системное имя Oem
+                            else
+                            {
+                                if (c == '`' || c == '~') keyStr = "Oem3";
+                                else if (c == '-') keyStr = "OemMinus";
+                                else if (c == '+') keyStr = "OemPlus";
+                                else if (c == '[') keyStr = "OemOpenBrackets";
+                                else if (c == ']') keyStr = "OemCloseBrackets";
+                                else if (c == '\'') keyStr = "OemQuotes";
+                                else if (c == ';') keyStr = "OemSemicolon";
+                                else if (c == ',') keyStr = "OemComma";
+                                else if (c == '.') keyStr = "OemPeriod";
+                                else if (c == '/') keyStr = "OemQuestion";
+                                else if (c == '\\') keyStr = "OemPipe";
+                            }
+                        }
+
+                        return KeyInterop.VirtualKeyFromKey((Key)Enum.Parse(typeof(Key), keyStr, true));
+                    }
+
                     // Извлечение и парсинг актуальных кодов виртуальных клавиш из текстовых полей интерфейса
-                    int activationVkCode = KeyInterop.VirtualKeyFromKey((Key)Enum.Parse(typeof(Key), TxtActivationKey.Text, true));
-                    byte emulationVkCode = (byte)KeyInterop.VirtualKeyFromKey((Key)Enum.Parse(typeof(Key), TxtEmulationKey.Text, true));
-                    int stopVkCode = KeyInterop.VirtualKeyFromKey((Key)Enum.Parse(typeof(Key), TxtStopKey.Text, true));
+                    int activationVkCode = GetVkCodeFromString(TxtActivationKey.Text);
+                    byte emulationVkCode = (byte)GetVkCodeFromString(TxtEmulationKey.Text);
+                    int stopVkCode = GetVkCodeFromString(TxtStopKey.Text);
 
                     // Передаем выбранную клавишу для эмуляции в процессор
                     _processor.CurrentEmulationKey = emulationVkCode;
@@ -451,7 +487,7 @@ namespace VoicePhraseCast
 
                             Dispatcher.BeginInvoke(new Action(() => {
                                 _processor.ToggleVosk(false);
-                                StatusText.Text = $"Статус: РАБОТАЕТ ({TxtActivationKey.Text} активна)";
+                                StatusText.Text = $"Статус: РАБОТАЕТ ({TxtActivationKey.Text} active)";
 
                                 // Извлечение финального текста из внутреннего буфера Vosk
                                 string finalSpeech = _processor.GetFinalText()?.Trim() ?? "";
@@ -491,7 +527,7 @@ namespace VoicePhraseCast
                     _isBridgeRunning = true;
 
                     // Визуальное обновление элементов управления интерфейса
-                    StatusText.Text = $"Статус: РАБОТАЕТ ({TxtActivationKey.Text} активна)";
+                    StatusText.Text = $"Статус: РАБОТАЕТ ({TxtActivationKey.Text} active)";
                     StatusText.Foreground = System.Windows.Media.Brushes.Green;
 
                     // Визуальное обновление кнопки "Старт" для индикации активного состояния
@@ -717,43 +753,74 @@ namespace VoicePhraseCast
 
         private void KeyField_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
         {
-            // Блокировка перехвата клавиатурного ввода, если мост находится в активном состоянии
-            if (!BtnStart.IsEnabled)
-            {
-                // Предотвращение WPF обработать нажатие, чтобы пользователь не мог случайно сбросить клавишу во время работы
-                return;
-            }
+            if (!BtnStart.IsEnabled) return;
 
             e.Handled = true;
 
-            // Игнорирование служебных навигационных клавиш и модификаторов ОС
             if (e.Key == Key.Tab || e.Key == Key.Capital || e.Key == Key.LeftShift || e.Key == Key.RightShift) return;
 
             var currentTextBox = sender as System.Windows.Controls.TextBox;
             if (currentTextBox == null) return;
 
-            // Определение фактической клавиши, учитывая системные клавиши (например, Alt)
             Key pressedKey = (e.Key == Key.System) ? e.SystemKey : e.Key;
             string pressedKeyName = pressedKey.ToString();
 
-            // Валидация горячих клавиш на предмет пересечения и дублирования значений
-            if (currentTextBox == TxtActivationKey && (pressedKeyName == TxtEmulationKey.Text || pressedKeyName == TxtStopKey.Text) ||
-          currentTextBox == TxtEmulationKey && (pressedKeyName == TxtActivationKey.Text || pressedKeyName == TxtStopKey.Text) ||
-          currentTextBox == TxtStopKey && (pressedKeyName == TxtActivationKey.Text || pressedKeyName == TxtEmulationKey.Text))
+            // Если это Oem-клавиша (спецсимвол), превращаем её в реальный символ клавиатуры
+            if (pressedKeyName.StartsWith("Oem"))
             {
-                System.Windows.MessageBox.Show("Клавиши не могут быть одинаковыми!",
-                                "Внимание", MessageBoxButton.OK, MessageBoxImage.Warning);
+                int vk = KeyInterop.VirtualKeyFromKey(pressedKey);
+                char ch = (char)MapVirtualKey((uint)vk, 2); // MAPVK_VK_TO_CHAR
+                if (ch != '\0')
+                {
+                    pressedKeyName = ch.ToString().ToUpper();
+                }
+            }
+            // Косметический фикс цифр: Убираем "D" (D8 -> 8)
+            else if (pressedKeyName.Length == 2 && pressedKeyName.StartsWith("D") && char.IsDigit(pressedKeyName[1]))
+            {
+                pressedKeyName = pressedKeyName.Substring(1);
+            }
+
+            // Проверка на уникальность
+            if (currentTextBox == TxtActivationKey && (pressedKeyName == TxtEmulationKey.Text || pressedKeyName == TxtStopKey.Text) ||
+                currentTextBox == TxtEmulationKey && (pressedKeyName == TxtActivationKey.Text || pressedKeyName == TxtStopKey.Text) ||
+                currentTextBox == TxtStopKey && (pressedKeyName == TxtActivationKey.Text || pressedKeyName == TxtEmulationKey.Text))
+            {
+                System.Windows.MessageBox.Show("Клавиши не могут быть одинаковыми!", "Внимание", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            // При успешной валидации обновляем текстовое поле с именем нажатой клавиши
             currentTextBox.Text = pressedKeyName;
-
-            // Снятие фокуса с текстового поля, чтобы предотвратить дальнейший ввод и зафиксировать выбранную клавишу
             Keyboard.ClearFocus();
-
-            // Сохранение настроек
             SaveKeySettings();
+        }
+
+        private void KeyField_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (!BtnStart.IsEnabled) return; // Блокировка, если мост запущен
+
+            var currentTextBox = sender as System.Windows.Controls.TextBox;
+            if (currentTextBox == null) return;
+
+            // Проверка, нажата ли именно боковая кнопка мыши
+            if (e.ChangedButton == MouseButton.XButton1 || e.ChangedButton == MouseButton.XButton2)
+            {
+                e.Handled = true;
+                string pressedKeyName = e.ChangedButton == MouseButton.XButton1 ? "MouseXButton1" : "MouseXButton2";
+
+                // Проверка на уникальность
+                if (currentTextBox == TxtActivationKey && (pressedKeyName == TxtEmulationKey.Text || pressedKeyName == TxtStopKey.Text) ||
+                    currentTextBox == TxtEmulationKey && (pressedKeyName == TxtActivationKey.Text || pressedKeyName == TxtStopKey.Text) ||
+                    currentTextBox == TxtStopKey && (pressedKeyName == TxtActivationKey.Text || pressedKeyName == TxtEmulationKey.Text))
+                {
+                    System.Windows.MessageBox.Show("Клавиши не могут быть одинаковыми!", "Внимание", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                currentTextBox.Text = pressedKeyName;
+                Keyboard.ClearFocus();
+                SaveKeySettings();
+            }
         }
 
         private void SaveKeySettings()
@@ -768,8 +835,14 @@ namespace VoicePhraseCast
             {
                 try
                 {
-                    _processor.CurrentEmulationKey = (byte)KeyInterop.VirtualKeyFromKey(
-                        (Key)Enum.Parse(typeof(Key), TxtEmulationKey.Text));
+                    string emuStr = TxtEmulationKey.Text;
+                    if (emuStr == "MouseXButton1") _processor.CurrentEmulationKey = 0x05;
+                    else if (emuStr == "MouseXButton2") _processor.CurrentEmulationKey = 0x06;
+                    else
+                    {
+                        if (emuStr.Length == 1 && char.IsDigit(emuStr[0])) emuStr = "D" + emuStr;
+                        _processor.CurrentEmulationKey = (byte)KeyInterop.VirtualKeyFromKey((Key)Enum.Parse(typeof(Key), emuStr));
+                    }
                 }
                 catch { /* Перехват исключения при обработке незаполненных значений */ }
             }
@@ -875,5 +948,8 @@ namespace VoicePhraseCast
                 }
             }));
         }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern uint MapVirtualKey(uint uCode, uint uMapType);
     }
 }
