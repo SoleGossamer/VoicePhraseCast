@@ -68,6 +68,7 @@ namespace VoicePhraseCast
             {
                 TxtPath.Text = savedPath;
                 _processor.LoadPhrases(savedPath);
+                InitializeFolderWatcher(savedPath); // Запускаем слежку за папкой при старте
             }
 
             string actKey = VoicePhraseCast.Properties.Settings.Default.ActivationKey;
@@ -144,12 +145,23 @@ namespace VoicePhraseCast
                 }), System.Windows.Threading.DispatcherPriority.Loaded);
             }
 
+            // Загрузка состояния сворачивания в трей
+            bool savedMinOnStart = VoicePhraseCast.Properties.Settings.Default.IsMinimizeOnStartEnabled;
+            ChkMinimizeOnStart.IsChecked = savedMinOnStart;
+
             // Инициализация данных завершена, разрешение на перезапись конфигурационных файлов активировано
             _isDataLoaded = true;
         }
 
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
+            // Останавливаем слежку за файлами
+            if (_folderWatcher != null)
+            {
+                _folderWatcher.EnableRaisingEvents = false;
+                _folderWatcher.Dispose();
+            }
+
             // Освобождение системного хука клавиатуры перед завершением процесса
             _hook.Unhook();
 
@@ -160,6 +172,7 @@ namespace VoicePhraseCast
         }
 
         private AudioProcessor _processor = new AudioProcessor();
+        private System.IO.FileSystemWatcher? _folderWatcher; // Поле для наблюдения за папкой
 
         private void InitTrayIcon()
         {
@@ -380,6 +393,7 @@ namespace VoicePhraseCast
             {
                 TxtPath.Text = dialog.FolderName;
                 _processor.LoadPhrases(dialog.FolderName);
+                InitializeFolderWatcher(dialog.FolderName); // Перенаправляем слежку на новую папку
 
                 // Сохранение выбранного пути в постоянную конфигурацию .NET
                 VoicePhraseCast.Properties.Settings.Default.LastPath = dialog.FolderName;
@@ -492,6 +506,16 @@ namespace VoicePhraseCast
                     TxtActivationKey.IsEnabled = false;
                     TxtEmulationKey.IsEnabled = false;
                     TxtStopKey.IsEnabled = false;
+
+                    // Если включено автоматическое сворачивание — программа скрывается в трей
+                    if (ChkMinimizeOnStart.IsChecked == true)
+                    {
+                        // Использование легкой задержки через Dispatcher, чтобы UI успел визуально обновиться (показать зеленый статус "РАБОТАЕТ") перед скрытием
+                        Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            this.WindowState = WindowState.Minimized;
+                        }), System.Windows.Threading.DispatcherPriority.Background);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -678,6 +702,19 @@ namespace VoicePhraseCast
             StatusText.Text = isEnabled ? "Автостарт моста включен" : "Автостарт моста выключен";
         }
 
+        private void ChkMinimizeOnStart_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_isDataLoaded) return;
+
+            bool isEnabled = ChkMinimizeOnStart.IsChecked ?? false;
+
+            // Сохранение настройки
+            VoicePhraseCast.Properties.Settings.Default.IsMinimizeOnStartEnabled = isEnabled;
+            VoicePhraseCast.Properties.Settings.Default.Save();
+
+            StatusText.Text = isEnabled ? "Режим скрытия при старте включен" : "Режим скрытия при старте выключен";
+        }
+
         private void KeyField_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
         {
             // Блокировка перехвата клавиатурного ввода, если мост находится в активном состоянии
@@ -788,6 +825,55 @@ namespace VoicePhraseCast
         private void BtnClose_Click(object sender, RoutedEventArgs e)
         {
             this.Close();
+        }
+
+        private void InitializeFolderWatcher(string folderPath)
+        {
+            // Если watcher уже существовал (например, сменили папку в настройках), уничтожается старый
+            if (_folderWatcher != null)
+            {
+                _folderWatcher.EnableRaisingEvents = false;
+                _folderWatcher.Dispose();
+                _folderWatcher = null;
+            }
+
+            if (!System.IO.Directory.Exists(folderPath)) return;
+
+            _folderWatcher = new System.IO.FileSystemWatcher
+            {
+                Path = folderPath,
+                Filter = "*.*", // Отслеживание аудиофайлов и конфигурационных файлов с любым расширением
+                NotifyFilter = System.IO.NotifyFilters.FileName | System.IO.NotifyFilters.LastWrite
+            };
+
+            // Подписка на все виды изменений в папке
+            _folderWatcher.Created += OnFolderChanged;
+            _folderWatcher.Deleted += OnFolderChanged;
+            _folderWatcher.Renamed += OnFolderChanged;
+            _folderWatcher.Changed += OnFolderChanged;
+
+            // Включение отслеживания
+            _folderWatcher.EnableRaisingEvents = true;
+        }
+
+        private void OnFolderChanged(object sender, System.IO.FileSystemEventArgs e)
+        {
+            // Небольшая пауза (500 мс). Когда файл копируется в папку, Windows держит его занятым. 
+            // Пауза дает ОС время завершить запись файла, чтобы программа не выдала ошибку доступа.
+            System.Threading.Thread.Sleep(500);
+
+            // Перенаправление выполнения в основной поток WPF интерфейса
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!string.IsNullOrEmpty(TxtPath.Text))
+                {
+                    // Пересканирование папки и обновление кэша в ОЗУ
+                    _processor.LoadPhrases(TxtPath.Text);
+
+                    // Обновление статуса для наглядности
+                    StatusText.Text = "База фраз обновлена автоматически";
+                }
+            }));
         }
     }
 }

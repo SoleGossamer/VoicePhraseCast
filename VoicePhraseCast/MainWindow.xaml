@@ -334,6 +334,14 @@
                                   VerticalContentAlignment="Center" 
                                   Cursor="Hand" 
                                   Click="ChkAutoBridgeStart_Click"/>
+                        <CheckBox x:Name="ChkMinimizeOnStart" 
+                                  Content="Сворачивать в трей при запуске моста" 
+                                  Foreground="#9CA3AF" 
+                                  FontSize="11" 
+                                  Margin="0,0,0,4"
+                                  VerticalContentAlignment="Center" 
+                                  Cursor="Hand" 
+                                  Click="ChkMinimizeOnStart_Click"/>
                     </StackPanel>
 
                     <Border Background="#020406" CornerRadius="2" Padding="6" Margin="0,5,0,0">
