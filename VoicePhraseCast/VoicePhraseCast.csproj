@@ -20,6 +20,8 @@
     <PackageReference Include="NAudio" Version="2.3.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="Vosk" Version="0.3.38" />
+    <PackageReference Include="Whisper.net" Version="1.9.1" />
+    <PackageReference Include="Whisper.net.Runtime.Vulkan" Version="1.9.1" />
   </ItemGroup>
 
   <ItemGroup>

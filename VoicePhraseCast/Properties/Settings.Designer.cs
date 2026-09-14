@@ -12,7 +12,7 @@ namespace VoicePhraseCast.Properties {
     
     
     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute()]
-    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("Microsoft.VisualStudio.Editors.SettingsDesigner.SettingsSingleFileGenerator", "18.8.0.0")]
+    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("Microsoft.VisualStudio.Editors.SettingsDesigner.SettingsSingleFileGenerator", "18.10.0.0")]
     internal sealed partial class Settings : global::System.Configuration.ApplicationSettingsBase {
         
         private static Settings defaultInstance = ((Settings)(global::System.Configuration.ApplicationSettingsBase.Synchronized(new Settings())));
@@ -152,6 +152,42 @@ namespace VoicePhraseCast.Properties {
             }
             set {
                 this["IsMinimizeOnStartEnabled"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("7")]
+        public string SttTeamHotkey {
+            get {
+                return ((string)(this["SttTeamHotkey"]));
+            }
+            set {
+                this["SttTeamHotkey"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("8")]
+        public string SttAllHotkey {
+            get {
+                return ((string)(this["SttAllHotkey"]));
+            }
+            set {
+                this["SttAllHotkey"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string WhisperModelPath {
+            get {
+                return ((string)(this["WhisperModelPath"]));
+            }
+            set {
+                this["WhisperModelPath"] = value;
             }
         }
     }

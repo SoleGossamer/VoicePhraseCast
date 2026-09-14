@@ -19,25 +19,14 @@
         Icon="pack://application:,,,/Resources/VoicePhraseCast.ico">
 
     <Window.Resources>
-        <!-- Безопасное подключение WindowChrome без мерцающих стеклянных рамок -->
-        <Style x:Key="CustomWindowChromeStyle" TargetType="Window">
-            <Setter Property="WindowChrome.WindowChrome">
-                <Setter.Value>
-                    <WindowChrome CaptionHeight="32" 
-                                  ResizeBorderThickness="0" 
-                                  GlassFrameThickness="0" 
-                                  CornerRadius="0"/>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- Стили элементов интерфейса -->
+        <!-- 1. Базовые стили для простых элементов -->
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="#7A8B9E"/>
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="FontFamily" Value="Segoe UI Semibold"/>
         </Style>
 
+        <!-- 2. Стили ComboBox -->
         <Style TargetType="ComboBox">
             <Setter Property="Height" Value="24"/>
             <Setter Property="Foreground" Value="#68768A"/>
@@ -150,6 +139,91 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- 3. Стили для TabControl и TabItem -->
+        <Style TargetType="TabControl">
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <Grid ClipToBounds="true" SnapsToDevicePixels="true" KeyboardNavigation.TabNavigation="Local">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <StackPanel x:Name="HeaderPanel" 
+                                        Grid.Row="0" 
+                                        IsItemsHost="true" 
+                                        Orientation="Horizontal" 
+                                        HorizontalAlignment="Center" 
+                                        Margin="0,4,0,12"/>
+                            <ContentPresenter x:Name="PART_SelectedContentHost" Grid.Row="1" ContentSource="SelectedContent"/>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="TabItem">
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Foreground" Value="#8A9FBF"/>
+            <Setter Property="Background" Value="#0A0D14"/>
+            <Setter Property="BorderBrush" Value="#1F2937"/>
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="Margin" Value="2,0"/>
+            <Setter Property="Padding" Value="14,0"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="Border" 
+                                Background="{TemplateBinding Background}" 
+                                BorderBrush="{TemplateBinding BorderBrush}" 
+                                BorderThickness="1" 
+                                CornerRadius="3" 
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter x:Name="ContentSite"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Center"
+                                              ContentSource="Header"
+                                              Margin="{TemplateBinding Padding}"
+                                              RecognizesAccessKey="True"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="#121620"/>
+                                <Setter TargetName="Border" Property="BorderBrush" Value="#374151"/>
+                                <Setter Property="Foreground" Value="#D1D5DB"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="#991B1B"/>
+                                <Setter TargetName="Border" Property="BorderBrush" Value="#B91C1C"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 4. Style для Window (перемещен в конец ресурсов) -->
+        <Style x:Key="CustomWindowChromeStyle" TargetType="Window">
+            <Setter Property="WindowChrome.WindowChrome">
+                <Setter.Value>
+                    <WindowChrome CaptionHeight="32" 
+                                  ResizeBorderThickness="0" 
+                                  GlassFrameThickness="0" 
+                                  CornerRadius="0"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Window.Style>
@@ -233,120 +307,193 @@
                 <StackPanel>
                     <Rectangle Height="1" Fill="#261A1B" Margin="0,5,0,10"/>
 
-                    <TextBlock Text="АУДИОУСТРОЙСТВА" Foreground="#991B1B" FontWeight="Bold" FontSize="11" Margin="0,0,0,6"/>
-                    <Grid Margin="0,0,0,10">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="80"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
+                    <TabControl>
+                        <!-- Вкладка SpeechToPhrase (Все текущие настройки) -->
+                        <TabItem Header="SpeechToPhrase">
+                            <StackPanel Margin="0,10,0,0">
+                                <TextBlock Text="АУДИОУСТРОЙСТВА" Foreground="#991B1B" FontWeight="Bold" FontSize="11" Margin="0,0,0,6"/>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="80"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
 
-                        <TextBlock Text="Микрофон:" VerticalAlignment="Center" Margin="0,0,0,6"/>
-                        <ComboBox x:Name="MicComboBox" DisplayMemberPath="Name" Grid.Column="1" Margin="0,0,0,6"/>
+                                    <TextBlock Text="Микрофон:" VerticalAlignment="Center" Margin="0,0,0,6"/>
+                                    <ComboBox x:Name="MicComboBox" DisplayMemberPath="Name" Grid.Column="1" Margin="0,0,0,6"/>
 
-                        <TextBlock Text="Вирт. кабель:" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,6"/>
-                        <ComboBox x:Name="CableComboBox" DisplayMemberPath="Name" Grid.Row="1" Grid.Column="1" Margin="0,0,0,6"/>
+                                    <TextBlock Text="Вирт. кабель:" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,6"/>
+                                    <ComboBox x:Name="CableComboBox" DisplayMemberPath="Name" Grid.Row="1" Grid.Column="1" Margin="0,0,0,6"/>
 
-                        <TextBlock Text="Наушники:" Grid.Row="2" VerticalAlignment="Center"/>
-                        <ComboBox x:Name="MonitorComboBox" DisplayMemberPath="Name" Grid.Row="2" Grid.Column="1"/>
-                    </Grid>
+                                    <TextBlock Text="Наушники:" Grid.Row="2" VerticalAlignment="Center"/>
+                                    <ComboBox x:Name="MonitorComboBox" DisplayMemberPath="Name" Grid.Row="2" Grid.Column="1"/>
+                                </Grid>
 
-                    <TextBlock Text="БАЗА ЗВУКОВЫХ ФРАЗ" Foreground="#991B1B" FontWeight="Bold" FontSize="11" Margin="0,0,0,6"/>
-                    <Grid Margin="0,0,0,10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="54"/>
-                            <ColumnDefinition Width="30"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBox x:Name="TxtPath" IsReadOnly="True" Background="#0A0F1D" Foreground="#4B5563" FontSize="12"
-                                 BorderBrush="#1F2937" Height="24" Padding="5,0" VerticalContentAlignment="Center"/>
-                        <Button x:Name="BtnBrowse" Grid.Column="1" Content="Обзор" Click="BtnBrowse_Click" FontSize="12"
-                                Width="48" Height="24" Margin="6,0,0,0" Background="#1F2937" Foreground="White" BorderThickness="0" Cursor="Hand"/>
-                        <Button x:Name="BtnOpenFolder" Grid.Column="2" Content="📁" Click="BtnOpenFolder_Click" FontSize="12"
-                                Width="26" Height="24" Background="#1F2937" Foreground="White" BorderThickness="0" Cursor="Hand"/>
-                    </Grid>
+                                <TextBlock Text="БАЗА ЗВУКОВЫХ ФРАЗ" Foreground="#991B1B" FontWeight="Bold" FontSize="11" Margin="0,0,0,6"/>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="54"/>
+                                        <ColumnDefinition Width="30"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="TxtPath" IsReadOnly="True" Background="#0A0F1D" Foreground="#4B5563" FontSize="12"
+                                             BorderBrush="#1F2937" Height="24" Padding="5,0" VerticalContentAlignment="Center"/>
+                                    <Button x:Name="BtnBrowse" Grid.Column="1" Content="Обзор" Click="BtnBrowse_Click" FontSize="12"
+                                            Width="48" Height="24" Margin="6,0,0,0" Background="#1F2937" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                    <Button x:Name="BtnOpenFolder" Grid.Column="2" Content="📁" Click="BtnOpenFolder_Click" FontSize="12"
+                                            Width="26" Height="24" Background="#1F2937" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                </Grid>
 
-                    <TextBlock Text="ГОРЯЧИЕ КЛАВИШИ" Foreground="#991B1B" FontWeight="Bold" FontSize="11" Margin="0,0,0,8"/>
-                    <UniformGrid Columns="3" Margin="0,0,0,12">
-                        <StackPanel Margin="0,0,6,0">
-                            <TextBlock Text="Запись (ИИ)" Foreground="#8A9FBF" FontSize="11" Margin="0,0,0,4" HorizontalAlignment="Center"/>
-                            <TextBox x:Name="TxtActivationKey" Text="F1" Height="26" IsReadOnly="True" Focusable="True" 
-                                     PreviewKeyDown="KeyField_PreviewKeyDown" Cursor="Hand" Background="#2D1517" Foreground="#EF4444" 
-                                     FontWeight="Bold" FontSize="12" TextAlignment="Center" VerticalContentAlignment="Center" BorderBrush="#7F1D1D"/>
-                        </StackPanel>
+                                <TextBlock Text="ГОРЯЧИЕ КЛАВИШИ" Foreground="#991B1B" FontWeight="Bold" FontSize="11" Margin="0,0,0,8"/>
+                                <UniformGrid Columns="3" Margin="0,0,0,12">
+                                    <StackPanel Margin="0,0,6,0">
+                                        <TextBlock Text="Запись (ИИ)" Foreground="#8A9FBF" FontSize="11" Margin="0,0,0,4" HorizontalAlignment="Center"/>
+                                        <TextBox x:Name="TxtActivationKey" Text="F1" Height="26" IsReadOnly="True" Focusable="True" 
+                                                 PreviewKeyDown="KeyField_PreviewKeyDown" Cursor="Hand" Background="#2D1517" Foreground="#EF4444" 
+                                                 FontWeight="Bold" FontSize="12" TextAlignment="Center" VerticalContentAlignment="Center" BorderBrush="#7F1D1D"/>
+                                    </StackPanel>
 
-                        <StackPanel Margin="3,0,3,0">
-                            <TextBlock Text="Рация в игре" Foreground="#8A9FBF" FontSize="11" Margin="0,0,0,4" HorizontalAlignment="Center"/>
-                            <TextBox x:Name="TxtEmulationKey" Text="G" Height="26" IsReadOnly="True" Focusable="True" 
-                                     PreviewKeyDown="KeyField_PreviewKeyDown" Cursor="Hand" Background="#241A10" Foreground="#F59E0B" 
-                                     FontWeight="Bold" FontSize="12" TextAlignment="Center" VerticalContentAlignment="Center" BorderBrush="#78350F"/>
-                        </StackPanel>
+                                    <StackPanel Margin="3,0,3,0">
+                                        <TextBlock Text="Рация в игре" Foreground="#8A9FBF" FontSize="11" Margin="0,0,0,4" HorizontalAlignment="Center"/>
+                                        <TextBox x:Name="TxtEmulationKey" Text="G" Height="26" IsReadOnly="True" Focusable="True" 
+                                                 PreviewKeyDown="KeyField_PreviewKeyDown" Cursor="Hand" Background="#241A10" Foreground="#F59E0B" 
+                                                 FontWeight="Bold" FontSize="12" TextAlignment="Center" VerticalContentAlignment="Center" BorderBrush="#78350F"/>
+                                    </StackPanel>
 
-                        <StackPanel Margin="6,0,0,0">
-                            <TextBlock Text="Стоп звука" Foreground="#8A9FBF" FontSize="11" Margin="0,0,0,4" HorizontalAlignment="Center"/>
-                            <TextBox x:Name="TxtStopKey" Text="Scroll" Height="26" IsReadOnly="True" Focusable="True" 
-                                     PreviewKeyDown="KeyField_PreviewKeyDown" Cursor="Hand" Background="#1E293B" Foreground="#94A3B8" 
-                                     FontWeight="Bold" FontSize="12" TextAlignment="Center" VerticalContentAlignment="Center" BorderBrush="#334155"/>
-                        </StackPanel>
-                    </UniformGrid>
+                                    <StackPanel Margin="6,0,0,0">
+                                        <TextBlock Text="Стоп звука" Foreground="#8A9FBF" FontSize="11" Margin="0,0,0,4" HorizontalAlignment="Center"/>
+                                        <TextBox x:Name="TxtStopKey" Text="Scroll" Height="26" IsReadOnly="True" Focusable="True" 
+                                                 PreviewKeyDown="KeyField_PreviewKeyDown" Cursor="Hand" Background="#1E293B" Foreground="#94A3B8" 
+                                                 FontWeight="Bold" FontSize="12" TextAlignment="Center" VerticalContentAlignment="Center" BorderBrush="#334155"/>
+                                    </StackPanel>
+                                </UniformGrid>
 
-                    <TextBlock Text="НАСТРОЙКА ГРОМКОСТИ" Foreground="#991B1B" FontWeight="Bold" FontSize="11" Margin="0,0,0,4"/>
-                    <StackPanel Margin="0,0,0,5">
-                        <Grid Margin="0,0,0,2">
-                            <TextBlock Text="Громкость для себя:" FontSize="11" Foreground="#4B5563"/>
-                            <TextBlock x:Name="TxtMicVolumeValue" Text="100%" FontSize="11" Foreground="#EF4444" FontWeight="Bold" HorizontalAlignment="Right"/>
-                        </Grid>
-                        <Slider x:Name="SliderMic" Minimum="0" Maximum="1" Value="1" Height="16" Margin="0,0,0,4" ValueChanged="SliderMic_ValueChanged"/>
+                                <TextBlock Text="НАСТРОЙКА ГРОМКОСТИ" Foreground="#991B1B" FontWeight="Bold" FontSize="11" Margin="0,0,0,4"/>
+                                <StackPanel Margin="0,0,0,5">
+                                    <Grid Margin="0,0,0,2">
+                                        <TextBlock Text="Громкость для себя:" FontSize="11" Foreground="#4B5563"/>
+                                        <TextBlock x:Name="TxtMicVolumeValue" Text="100%" FontSize="11" Foreground="#EF4444" FontWeight="Bold" HorizontalAlignment="Right"/>
+                                    </Grid>
+                                    <Slider x:Name="SliderMic" Minimum="0" Maximum="1" Value="1" Height="16" Margin="0,0,0,4" ValueChanged="SliderMic_ValueChanged"/>
 
-                        <Grid Margin="0,0,0,2">
-                            <TextBlock Text="Громкость в игру:" FontSize="11" Foreground="#4B5563"/>
-                            <TextBlock x:Name="TxtCableVolumeValue" Text="100%" FontSize="11" Foreground="#EF4444" FontWeight="Bold" HorizontalAlignment="Right"/>
-                        </Grid>
-                        <Slider x:Name="SliderCable" Minimum="0" Maximum="1" Value="1" Height="16" Margin="0,0,0,6" ValueChanged="SliderCable_ValueChanged"/>
+                                    <Grid Margin="0,0,0,2">
+                                        <TextBlock Text="Громкость в игру:" FontSize="11" Foreground="#4B5563"/>
+                                        <TextBlock x:Name="TxtCableVolumeValue" Text="100%" FontSize="11" Foreground="#EF4444" FontWeight="Bold" HorizontalAlignment="Right"/>
+                                    </Grid>
+                                    <Slider x:Name="SliderCable" Minimum="0" Maximum="1" Value="1" Height="16" Margin="0,0,0,6" ValueChanged="SliderCable_ValueChanged"/>
 
-                        <CheckBox x:Name="ChkMonitor" Content="Включить самопрослушивание фраз" Foreground="#9CA3AF" FontSize="11" 
-                                  VerticalContentAlignment="Center" Cursor="Hand" Checked="ChkMonitor_Click" Unchecked="ChkMonitor_Click"/>
-                        <CheckBox x:Name="ChkEmulationEnabled" 
-                                  Content="Включить эмуляцию рации в игре" 
-                                  Foreground="#F59E0B" 
-                                  FontWeight="SemiBold"
-                                  Margin="0,4,0,4"
-                                  IsChecked="True"
-                                  Click="ChkEmulationEnabled_Click"/>
-                        <CheckBox x:Name="ChkAutostartWindows" 
-                                  Content="Запускать программу при старте Windows" 
-                                  Foreground="#9CA3AF" 
-                                  FontSize="11" 
-                                  Margin="0,0,0,4"
-                                  VerticalContentAlignment="Center" 
-                                  Cursor="Hand" 
-                                  Click="ChkAutostartWindows_Click"/>
+                                    <CheckBox x:Name="ChkMonitor" Content="Включить самопрослушивание фраз" Foreground="#9CA3AF" FontSize="11" 
+                                              VerticalContentAlignment="Center" Cursor="Hand" Checked="ChkMonitor_Click" Unchecked="ChkMonitor_Click"/>
+                                    <CheckBox x:Name="ChkEmulationEnabled" 
+                                              Content="Включить эмуляцию рации в игре" 
+                                              Foreground="#F59E0B" 
+                                              FontWeight="SemiBold"
+                                              Margin="0,4,0,4"
+                                              IsChecked="True"
+                                              Click="ChkEmulationEnabled_Click"/>
+                                    <CheckBox x:Name="ChkAutostartWindows" 
+                                              Content="Запускать программу при старте Windows" 
+                                              Foreground="#9CA3AF" 
+                                              FontSize="11" 
+                                              Margin="0,0,0,4"
+                                              VerticalContentAlignment="Center" 
+                                              Cursor="Hand" 
+                                              Click="ChkAutostartWindows_Click"/>
 
-                        <CheckBox x:Name="ChkAutoBridgeStart" 
-                                  Content="Автоматически запускать мост при старте программы" 
-                                  Foreground="#9CA3AF" 
-                                  FontSize="11" 
-                                  Margin="0,0,0,4"
-                                  VerticalContentAlignment="Center" 
-                                  Cursor="Hand" 
-                                  Click="ChkAutoBridgeStart_Click"/>
-                        <CheckBox x:Name="ChkMinimizeOnStart" 
-                                  Content="Сворачивать в трей при запуске моста" 
-                                  Foreground="#9CA3AF" 
-                                  FontSize="11" 
-                                  Margin="0,0,0,4"
-                                  VerticalContentAlignment="Center" 
-                                  Cursor="Hand" 
-                                  Click="ChkMinimizeOnStart_Click"/>
-                    </StackPanel>
+                                    <CheckBox x:Name="ChkAutoBridgeStart" 
+                                              Content="Автоматически запускать мост при старте программы" 
+                                              Foreground="#9CA3AF" 
+                                              FontSize="11" 
+                                              Margin="0,0,0,4"
+                                              VerticalContentAlignment="Center" 
+                                              Cursor="Hand" 
+                                              Click="ChkAutoBridgeStart_Click"/>
+                                    <CheckBox x:Name="ChkMinimizeOnStart" 
+                                              Content="Сворачивать в трей при запуске моста" 
+                                              Foreground="#9CA3AF" 
+                                              FontSize="11" 
+                                              Margin="0,0,0,4"
+                                              VerticalContentAlignment="Center" 
+                                              Cursor="Hand" 
+                                              Click="ChkMinimizeOnStart_Click"/>
+                                </StackPanel>
 
-                    <Border Background="#020406" CornerRadius="2" Padding="6" Margin="0,5,0,0">
-                        <TextBlock x:Name="HintText" Text="💡 Подсказка: Укажите Virtual Cable как устройство ввода в Discord/игре." Foreground="#4B5563" FontSize="11" TextWrapping="Wrap" LineHeight="13"/>
-                    </Border>
+                                <Border Background="#020406" CornerRadius="2" Padding="6" Margin="0,5,0,0">
+                                    <TextBlock x:Name="HintText" Text="💡 Подсказка: Укажите Virtual Cable как устройство ввода в Discord/игре." Foreground="#4B5563" FontSize="11" TextWrapping="Wrap" LineHeight="13"/>
+                                </Border>
+                            </StackPanel>
+                        </TabItem>
+
+                        <!-- Вкладка SpeechToText (Готова для будущих элементов) -->
+                        <TabItem Header="SpeechToText">
+                            <StackPanel Margin="0,10,0,0">
+                                <TextBlock Text="МОДЕЛЬ И ОПЦИИ РАСПОЗНАВАНИЯ" Foreground="#991B1B" FontWeight="Bold" FontSize="11" Margin="0,0,0,6"/>
+
+                                <!-- Выбор файла модели Whisper (.bin) -->
+                                <TextBlock Text="Путь к модели Whisper (.bin):" Margin="0,0,0,4"/>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="54"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="TxtSttModelPath" IsReadOnly="True" Background="#0A0F1D" Foreground="#4B5563" FontSize="12"
+                     BorderBrush="#1F2937" Height="24" Padding="5,0" VerticalContentAlignment="Center"/>
+                                    <Button x:Name="BtnBrowseSttModel" Grid.Column="1" Content="Обзор" Click="BtnBrowseSttModel_Click" FontSize="12"
+                    Width="48" Height="24" Margin="6,0,0,0" Background="#1F2937" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                                </Grid>
+
+                                <TextBlock Text="ГОРЯЧИЕ КЛАВИШИ" Foreground="#991B1B" FontWeight="Bold" FontSize="11" Margin="0,0,0,6"/>
+
+                                <!-- Хоткей записи для КОМАНДНОГО чата -->
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="110"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Запись для союзного чата (Enter):" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="TxtSttTeamHotkey" Grid.Column="1" Text="7" Height="24" IsReadOnly="True" Focusable="True" 
+             PreviewKeyDown="KeyField_PreviewKeyDown" Cursor="Hand" Background="#2D1517" Foreground="#EF4444" 
+             FontWeight="Bold" FontSize="12" TextAlignment="Center" VerticalContentAlignment="Center" BorderBrush="#7F1D1D"/>
+                                </Grid>
+
+                                <!-- Хоткей записи для ОБЩЕГО чата -->
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="110"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Запись для общего чата (Shift+Enter):" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="TxtSttAllHotkey" Grid.Column="1" Text="8" Height="24" IsReadOnly="True" Focusable="True" 
+             PreviewKeyDown="KeyField_PreviewKeyDown" Cursor="Hand" Background="#1E293B" Foreground="#38BDF8" 
+             FontWeight="Bold" FontSize="12" TextAlignment="Center" VerticalContentAlignment="Center" BorderBrush="#334155"/>
+                                </Grid>
+                                <!-- Хоткей открытия чата -->
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="110"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Клавиша открытия чата:" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="TxtSttChatKey" Grid.Column="1" Text="Enter" Height="24" IsReadOnly="True" Focusable="True" 
+                     PreviewKeyDown="KeyField_PreviewKeyDown" Cursor="Hand" Background="#1E293B" Foreground="#38BDF8" 
+                     FontWeight="Bold" FontSize="12" TextAlignment="Center" VerticalContentAlignment="Center" BorderBrush="#334155"/>
+                                </Grid>
+
+                                <TextBlock Text="НАСТРОЙКИ ВВОДА ТЕКСТА" Foreground="#991B1B" FontWeight="Bold" FontSize="11" Margin="0,0,0,6"/>
+                                <StackPanel Margin="0,0,0,5">
+                                    <CheckBox x:Name="ChkAutoPaste" Content="Автоматически вставлять текст в активное окно" Foreground="#F59E0B" FontWeight="SemiBold" IsChecked="True" Margin="0,0,0,4"/>
+                                    <CheckBox x:Name="ChkOpenChatBeforePaste" Content="Нажимать клавишу чата перед вставкой" Foreground="#9CA3AF" FontSize="11" IsChecked="True" Margin="0,0,0,4"/>
+                                    <CheckBox x:Name="ChkUseClipboard" Content="Использовать Ctrl+V вместо прямой эмуляции" Foreground="#9CA3AF" FontSize="11" IsChecked="True" Margin="0,0,0,4"/>
+                                    <CheckBox x:Name="ChkSendEnterAfterText" Content="Нажимать Enter после вставки текста" Foreground="#9CA3AF" FontSize="11" IsChecked="True" Margin="0,0,0,4"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </TabItem>
+                    </TabControl>
+
                 </StackPanel>
             </ScrollViewer>
         </Grid>

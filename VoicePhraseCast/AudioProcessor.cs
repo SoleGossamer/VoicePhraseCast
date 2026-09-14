@@ -64,6 +64,11 @@ namespace DotaVoiceAssistant
         public event Action<string>? OnVoskStatusChanged;
         private DateTime _lastPlayTime = DateTime.MinValue;
 
+
+        private MemoryStream? _sttAudioBuffer;
+        private readonly object _sttLock = new();
+        public bool IsSttRecording { get; private set; }
+
         public async Task InitializeVoskAsync()
         {
             try
@@ -315,17 +320,26 @@ namespace DotaVoiceAssistant
 
             _micInput.DataAvailable += (s, e) =>
             {
-                // Маршрутизация голоса в виртуальный кабель (блокируется, если играет фраза или включен режим ИИ)
+                // 1. Запись сырого аудиопотока в буфер для Whisper (STT)
+                if (IsSttRecording)
+                {
+                    lock (_sttLock)
+                    {
+                        _sttAudioBuffer?.Write(e.Buffer, 0, e.BytesRecorded);
+                    }
+                }
+
+                // 2. Маршрутизация голоса в виртуальный кабель
                 if (!_isPlaying && !IsListenMode)
                 {
                     _cableBuffer?.AddSamples(e.Buffer, 0, e.BytesRecorded);
                 }
                 else
                 {
-                    // Во время воспроизведения фразы входящие сэмплы микрофона игнорируются для предотвращения задержек
+                    // Во время воспроизведения фразы входящие сэмплы микрофона игнорируются
                 }
 
-                // Передача захваченных аудио-данных в конвейер распознавания Vosk
+                // 3. Передача захваченных аудио-данных в конвейер распознавания Vosk
                 if (IsListenMode && _recognizer != null)
                 {
                     lock (_voskLock)
@@ -345,7 +359,6 @@ namespace DotaVoiceAssistant
                     }
                 }
             };
-
             _virtualOutput.Play();
             _monitorOutput.Play();
             _micInput.StartRecording();
@@ -637,6 +650,9 @@ namespace DotaVoiceAssistant
                     else
                     {
                         Debug.WriteLine("[FuzzySharp] Отмена: Ничего не подошло.");
+
+                        // Сохранение очищенной нераспознанной фразы на диск F:
+                        SaveMissingPhrase(cleanText);
                     }
                 }
                 catch (Exception ex)
@@ -663,6 +679,61 @@ namespace DotaVoiceAssistant
             _monitorMixer = null;
             _cableBuffer = null;
             _monitorBuffer = null;
+        }
+
+        private readonly object _fileLock = new object();
+
+        private void SaveMissingPhrase(string phrase)
+        {
+            try
+            {
+                string filePath = @"F:\missing_phrases.txt";
+
+                lock (_fileLock)
+                {
+                    // Проверяем существование файла. Если его нет — AppendAllText создаст его автоматически.
+                    if (File.Exists(filePath))
+                    {
+                        var existingLines = File.ReadAllLines(filePath, Encoding.UTF8);
+                        // Пропускаем запись, если такая фраза уже фиксировалась (без учета регистра)
+                        if (Array.Exists(existingLines, line => line.Equals(phrase, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            return;
+                        }
+                    }
+
+                    File.AppendAllText(filePath, phrase + Environment.NewLine, Encoding.UTF8);
+                    Debug.WriteLine($"[Missing Phrases] Фраза '{phrase}' сохранена в {filePath}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[Missing Phrases Error] Не удалось записать в файл: {ex.Message}");
+            }
+        }
+
+        public void StartSttRecording()
+        {
+            lock (_sttLock)
+            {
+                _sttAudioBuffer?.Dispose();
+                _sttAudioBuffer = new MemoryStream();
+                IsSttRecording = true;
+            }
+        }
+
+        public byte[] StopSttRecording()
+        {
+            lock (_sttLock)
+            {
+                IsSttRecording = false;
+                if (_sttAudioBuffer == null) return Array.Empty<byte>();
+
+                byte[] audioData = _sttAudioBuffer.ToArray();
+                _sttAudioBuffer.Dispose();
+                _sttAudioBuffer = null;
+                return audioData;
+            }
         }
     }
 }

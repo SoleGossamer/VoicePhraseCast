@@ -1,5 +1,6 @@
 ﻿using DotaVoiceAssistant;
 using NAudio.Wave;
+using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -29,6 +30,8 @@ namespace VoicePhraseCast
         private bool _isDataLoaded = false;
         private bool _isSettingsExpanded = false;
         private bool _isBridgeRunning = false;
+        private SpeechToTextService _sttService = new SpeechToTextService();
+        private bool _isTargetingAllChat = false;
         public MainWindow()
         {
             InitializeComponent();
@@ -62,25 +65,38 @@ namespace VoicePhraseCast
 
             Task.Run(async () => await _processor.InitializeVoskAsync());
 
-            // Загрузка сохраненных путей к директориям и конфигурации горячих клавиш
+            // --- Автозагрузка папки с фразами ---
             string savedPath = VoicePhraseCast.Properties.Settings.Default.LastPath;
-            if (!string.IsNullOrEmpty(savedPath))
+            if (!string.IsNullOrEmpty(savedPath) && Directory.Exists(savedPath))
             {
                 TxtPath.Text = savedPath;
                 _processor.LoadPhrases(savedPath);
                 InitializeFolderWatcher(savedPath); // Запускаем слежку за папкой при старте
             }
 
+            // --- Автозагрузка модели Whisper ---
+            string savedSttModelPath = VoicePhraseCast.Properties.Settings.Default.WhisperModelPath;
+            if (!string.IsNullOrEmpty(savedSttModelPath) && File.Exists(savedSttModelPath))
+            {
+                InitializeWhisperModel(savedSttModelPath);
+            }
+
             string actKey = VoicePhraseCast.Properties.Settings.Default.ActivationKey;
             string emuKey = VoicePhraseCast.Properties.Settings.Default.EmulationKey;
             string stopKey = VoicePhraseCast.Properties.Settings.Default.StopKey;
+            string teamKey = VoicePhraseCast.Properties.Settings.Default.SttTeamHotkey;
+            string allKey = VoicePhraseCast.Properties.Settings.Default.SttAllHotkey;
             if (!string.IsNullOrEmpty(actKey)) TxtActivationKey.Text = actKey;
             if (!string.IsNullOrEmpty(emuKey)) TxtEmulationKey.Text = emuKey;
             if (!string.IsNullOrEmpty(stopKey)) TxtStopKey.Text = stopKey;
+            if (!string.IsNullOrEmpty(teamKey)) TxtSttTeamHotkey.Text = teamKey;
+            if (!string.IsNullOrEmpty(allKey)) TxtSttAllHotkey.Text = allKey;
 
             TxtActivationKey.PreviewMouseDown += KeyField_PreviewMouseDown;
             TxtEmulationKey.PreviewMouseDown += KeyField_PreviewMouseDown;
             TxtStopKey.PreviewMouseDown += KeyField_PreviewMouseDown;
+            TxtSttTeamHotkey.PreviewMouseDown += KeyField_PreviewMouseDown;
+            TxtSttAllHotkey.PreviewMouseDown += KeyField_PreviewMouseDown;
 
             // Загрузка параметров громкости из пользовательских настроек
             float savedVolumeMic = VoicePhraseCast.Properties.Settings.Default.VolumeMic;
@@ -451,6 +467,8 @@ namespace VoicePhraseCast
                     int activationVkCode = GetVkCodeFromString(TxtActivationKey.Text);
                     byte emulationVkCode = (byte)GetVkCodeFromString(TxtEmulationKey.Text);
                     int stopVkCode = GetVkCodeFromString(TxtStopKey.Text);
+                    int sttTeamVk = GetVkCodeFromString(TxtSttTeamHotkey.Text);
+                    int sttAllVk = GetVkCodeFromString(TxtSttAllHotkey.Text);
 
                     // Передаем выбранную клавишу для эмуляции в процессор
                     _processor.CurrentEmulationKey = emulationVkCode;
@@ -512,6 +530,75 @@ namespace VoicePhraseCast
                         }
                     };
 
+                    _hook.OnKeyDown += (vkCode) =>
+                    {
+                        if (vkCode == sttTeamVk || vkCode == sttAllVk)
+                        {
+                            // Проверяем состояние записи через _processor
+                            if (!_processor.IsSttRecording)
+                            {
+                                _isTargetingAllChat = (vkCode == sttAllVk);
+
+                                // Запускаем накопление в AudioProcessor
+                                _processor.StartSttRecording();
+
+                                Dispatcher.Invoke(() => StatusText.Text = "Запись для Whisper...");
+                            }
+                        }
+                    };
+
+                    _hook.OnKeyUp += (vkCode) =>
+                    {
+                        if (vkCode == sttTeamVk || vkCode == sttAllVk)
+                        {
+                            if (_processor.IsSttRecording)
+                            {
+                                // Забираем байты записи синхронно и мгновенно
+                                byte[] recordedAudio = _processor.StopSttRecording();
+
+                                // Выносим распознавание и ввод в отдельную фоновую задачу, освобождая поток хука!
+                                Task.Run(async () =>
+                                {
+                                    Dispatcher.Invoke(() => StatusText.Text = "Распознавание (Whisper)...");
+
+                                    // Распознаем через Whisper
+                                    string text = await _sttService.RecognizeBytesAsync(recordedAudio);
+
+                                    if (!string.IsNullOrWhiteSpace(text))
+                                    {
+                                        Dispatcher.Invoke(() => StatusText.Text = $"Распознано: {text}");
+
+                                        bool autoPaste = false;
+                                        bool openChat = false;
+                                        bool sendEnter = false;
+
+                                        // Забираем флаги из потока UI
+                                        Dispatcher.Invoke(() =>
+                                        {
+                                            autoPaste = ChkAutoPaste.IsChecked == true;
+                                            openChat = ChkOpenChatBeforePaste.IsChecked == true;
+                                            sendEnter = ChkSendEnterAfterText.IsChecked == true;
+                                        });
+
+                                        if (autoPaste)
+                                        {
+                                            await TextInsertionService.InsertViaClipboardAsync(
+                                                text,
+                                                _isTargetingAllChat,
+                                                openChat,
+                                                sendEnter
+                                            );
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Dispatcher.Invoke(() => StatusText.Text = "Готово (речь не распознана)");
+                                    }
+                                });
+                            }
+                        }
+                    };
+
                     // Синхронизация состояния мониторинга звука в наушниках
                     _processor.IsMonitoringEnabled = ChkMonitor.IsChecked ?? false;
 
@@ -558,6 +645,56 @@ namespace VoicePhraseCast
                     System.Windows.MessageBox.Show($"Ошибка при запуске: {ex.Message}\nПроверьте настройки клавиш.");
                 }
             }
+        }
+
+        private void BtnBrowseSttModel_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Filter = "Whisper Model (*.bin)|*.bin|All Files (*.*)|*.*",
+                Title = "Выберите файл модели Whisper (.bin)"
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                InitializeWhisperModel(dialog.FileName);
+
+                // Сохраняем путь к Whisper точно так же, как и LastPath
+                VoicePhraseCast.Properties.Settings.Default.WhisperModelPath = dialog.FileName;
+                VoicePhraseCast.Properties.Settings.Default.Save();
+            }
+        }
+
+        // Вынесенный вспомогательный метод инициализации
+        private void InitializeWhisperModel(string modelPath)
+        {
+            TxtSttModelPath.Text = modelPath;
+
+            _sttService?.Dispose();
+            _sttService = new SpeechToTextService();
+
+            _sttService.OnStatusChanged += (status) =>
+            {
+                Dispatcher.Invoke(() => StatusText.Text = status);
+            };
+
+            _sttService.OnTextRecognized += async (text) =>
+            {
+                await Dispatcher.Invoke(async () =>
+                {
+                    RecognizedText.Text = $"Whisper: {text}";
+
+                    //if (ChkAutoPaste.IsChecked == true)
+                    //{
+                    //    bool openChat = ChkOpenChatBeforePaste.IsChecked == true;
+                    //    bool sendEnter = ChkSendEnterAfterText.IsChecked == true;
+
+                    //    await TextInsertionService.InsertViaClipboardAsync(text, _isTargetingAllChat, openChat, sendEnter);
+                    //}
+                });
+            };
+
+            _sttService.Initialize(modelPath);
         }
 
         private void BtnStop_Click(object sender, RoutedEventArgs e)
@@ -782,9 +919,10 @@ namespace VoicePhraseCast
             }
 
             // Проверка на уникальность
-            if (currentTextBox == TxtActivationKey && (pressedKeyName == TxtEmulationKey.Text || pressedKeyName == TxtStopKey.Text) ||
-                currentTextBox == TxtEmulationKey && (pressedKeyName == TxtActivationKey.Text || pressedKeyName == TxtStopKey.Text) ||
-                currentTextBox == TxtStopKey && (pressedKeyName == TxtActivationKey.Text || pressedKeyName == TxtEmulationKey.Text))
+            if ((currentTextBox == TxtActivationKey && (pressedKeyName == TxtEmulationKey.Text || pressedKeyName == TxtStopKey.Text || pressedKeyName == TxtSttTeamHotkey.Text)) ||
+                (currentTextBox == TxtEmulationKey && (pressedKeyName == TxtActivationKey.Text || pressedKeyName == TxtStopKey.Text || pressedKeyName == TxtSttTeamHotkey.Text)) ||
+                (currentTextBox == TxtStopKey && (pressedKeyName == TxtActivationKey.Text || pressedKeyName == TxtEmulationKey.Text || pressedKeyName == TxtSttTeamHotkey.Text)) ||
+                (currentTextBox == TxtSttTeamHotkey && (pressedKeyName == TxtActivationKey.Text || pressedKeyName == TxtEmulationKey.Text || pressedKeyName == TxtStopKey.Text)))
             {
                 System.Windows.MessageBox.Show("Клавиши не могут быть одинаковыми!", "Внимание", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
@@ -828,6 +966,8 @@ namespace VoicePhraseCast
             VoicePhraseCast.Properties.Settings.Default.ActivationKey = TxtActivationKey.Text;
             VoicePhraseCast.Properties.Settings.Default.EmulationKey = TxtEmulationKey.Text;
             VoicePhraseCast.Properties.Settings.Default.StopKey = TxtStopKey.Text;
+            VoicePhraseCast.Properties.Settings.Default.SttTeamHotkey = TxtSttTeamHotkey.Text;
+            VoicePhraseCast.Properties.Settings.Default.SttAllHotkey = TxtSttAllHotkey.Text;
             VoicePhraseCast.Properties.Settings.Default.Save();
 
             // Обновление текущей клавиши эмуляции в аудиопроцессоре, если он уже инициализирован
