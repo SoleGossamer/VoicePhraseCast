@@ -1,121 +1,137 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Text;
 using System.Threading.Tasks;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
-using Whisper.net;
+using Vosk;
 
 namespace VoicePhraseCast
 {
     public class SpeechToTextService : IDisposable
     {
-        private WhisperFactory? _whisperFactory;
-        private WhisperProcessor? _processor;
+        private Model? _voskModel;
+        private VoskRecognizer? _recognizer;
+        private readonly object _lock = new();
 
-        public event Action<string>? OnTextRecognized;
         public event Action<string>? OnStatusChanged;
 
-        public bool IsInitialized => _processor != null;
-
+        /// <summary>
+        /// Инициализация модели Vosk для STT
+        /// </summary>
         public void Initialize(string modelPath)
         {
-            if (!File.Exists(modelPath))
+            if (!Directory.Exists(modelPath))
             {
-                OnStatusChanged?.Invoke("Ошибка: Файл модели Whisper не найден!");
+                OnStatusChanged?.Invoke("Ошибка STT: Папка с моделью Vosk не найдена!");
                 return;
             }
 
             try
             {
-                _whisperFactory = WhisperFactory.FromPath(modelPath);
+                lock (_lock)
+                {
+                    Vosk.Vosk.SetLogLevel(-1);
+                    _voskModel = new Model(modelPath);
+                    _recognizer = new VoskRecognizer(_voskModel, 16000.0f);
+                    _recognizer.SetMaxAlternatives(0);
+                    _recognizer.SetWords(false);
+                }
 
-                _processor = _whisperFactory.CreateBuilder()
-                    .WithLanguage("ru")
-                    .WithThreads(4) // Оставляем лимит потоков для стабильности
-                    .Build();
-
-                OnStatusChanged?.Invoke("Whisper готов к работе (Vulkan GPU)");
+                OnStatusChanged?.Invoke("STT готов к работе");
             }
             catch (Exception ex)
             {
-                OnStatusChanged?.Invoke($"Ошибка инициализации Whisper: {ex.Message}");
+                OnStatusChanged?.Invoke($"Ошибка инициализации STT: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// Принимает сырые байты PCM 44.1 кГц / 16-bit / Mono из AudioProcessor,
-        /// ресемплирует в 16 кГц и распознает с помощью Whisper.
+        /// Принимает сырые байты PCM (44.1 кГц, 16 бит, Mono), ресемплирует до 16 кГц и распознает текст.
         /// </summary>
-        public async Task<string> RecognizeBytesAsync(byte[] pcm44100Bytes)
+        public Task<string> RecognizeBytesAsync(byte[] pcm44100Bytes)
         {
-            if (_processor == null || pcm44100Bytes == null || pcm44100Bytes.Length == 0)
-                return string.Empty;
+            if (pcm44100Bytes == null || pcm44100Bytes.Length == 0)
+                return Task.FromResult(string.Empty);
 
-            try
+            if (_recognizer == null)
             {
-                OnStatusChanged?.Invoke("Распознавание речи...");
-
-                // 1. Оборачиваем сырые байты 44.1 кГц в RawSourceWaveStream
-                var waveFormat = new WaveFormat(44100, 16, 1);
-                using var inputStream = new MemoryStream(pcm44100Bytes);
-                using var rawProvider = new RawSourceWaveStream(inputStream, waveFormat);
-
-                // 2. Ресемплируем до 16000 Гц с помощью WdlResamplingSampleProvider
-                var resampler = new WdlResamplingSampleProvider(rawProvider.ToSampleProvider(), 16000);
-
-                // 3. Считываем сэмплы в массив float (значения -1.0f .. 1.0f)
-                var floatSamples = new List<float>();
-                var buffer = new float[1600];
-                int read;
-                while ((read = resampler.Read(buffer, 0, buffer.Length)) > 0)
+                // Резервная инициализация, если модель лежит в папке приложения по умолчанию
+                string defaultPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "model");
+                if (Directory.Exists(defaultPath))
                 {
-                    for (int i = 0; i < read; i++)
+                    Initialize(defaultPath);
+                }
+
+                if (_recognizer == null)
+                {
+                    OnStatusChanged?.Invoke("Ошибка: Модель STT не инициализирована!");
+                    return Task.FromResult(string.Empty);
+                }
+            }
+
+            return Task.Run(() =>
+            {
+                try
+                {
+                    OnStatusChanged?.Invoke("Распознавание речи...");
+
+                    // 1. Делаем сырой PCM 44.1 кГц
+                    var waveFormat = new WaveFormat(44100, 16, 1);
+                    using var inputStream = new MemoryStream(pcm44100Bytes);
+                    using var rawProvider = new RawSourceWaveStream(inputStream, waveFormat);
+
+                    // 2. Ресемплируем в 16000 Гц
+                    var resampler = new WdlResamplingSampleProvider(rawProvider.ToSampleProvider(), 16000);
+                    var sampleProvider16 = resampler.ToWaveProvider16();
+
+                    byte[] buffer = new byte[4096];
+                    int bytesRead;
+
+                    lock (_lock)
                     {
-                        floatSamples.Add(buffer[i]);
+                        _recognizer.Reset();
+
+                        while ((bytesRead = sampleProvider16.Read(buffer, 0, buffer.Length)) > 0)
+                        {
+                            _recognizer.AcceptWaveform(buffer, bytesRead);
+                        }
+
+                        string jsonResult = _recognizer.FinalResult();
+                        string text = ExtractTextFromJson(jsonResult);
+
+                        return text;
                     }
                 }
-
-                if (floatSamples.Count == 0)
+                catch (Exception ex)
                 {
-                    OnStatusChanged?.Invoke("Запись слишком короткая.");
+                    System.Diagnostics.Debug.WriteLine($"[STT Error] {ex.Message}");
                     return string.Empty;
                 }
+            });
+        }
 
-                // 4. Прогоняем массив float через WhisperProcessor
-                var resultBuilder = new StringBuilder();
-
-                await foreach (var segment in _processor.ProcessAsync(floatSamples.ToArray()))
-                {
-                    resultBuilder.Append(segment.Text);
-                }
-
-                string recognizedText = resultBuilder.ToString().Trim();
-
-                if (!string.IsNullOrWhiteSpace(recognizedText))
-                {
-                    OnStatusChanged?.Invoke("Готово!");
-                    OnTextRecognized?.Invoke(recognizedText);
-                    return recognizedText;
-                }
-                else
-                {
-                    OnStatusChanged?.Invoke("Речь не распознана.");
-                    return string.Empty;
-                }
-            }
-            catch (Exception ex)
+        private string ExtractTextFromJson(string json)
+        {
+            int textIndex = json.IndexOf("\"text\" : \"");
+            if (textIndex != -1)
             {
-                OnStatusChanged?.Invoke($"Ошибка распознавания: {ex.Message}");
-                return string.Empty;
+                int start = textIndex + 10;
+                int end = json.IndexOf("\"", start);
+                if (end != -1)
+                {
+                    return json.Substring(start, end - start).Trim();
+                }
             }
+            return string.Empty;
         }
 
         public void Dispose()
         {
-            _processor?.Dispose();
-            _whisperFactory?.Dispose();
+            lock (_lock)
+            {
+                _recognizer?.Dispose();
+                _voskModel?.Dispose();
+            }
         }
     }
 }

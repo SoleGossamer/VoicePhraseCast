@@ -178,17 +178,5 @@ namespace VoicePhraseCast.Properties {
                 this["SttAllHotkey"] = value;
             }
         }
-        
-        [global::System.Configuration.UserScopedSettingAttribute()]
-        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("")]
-        public string WhisperModelPath {
-            get {
-                return ((string)(this["WhisperModelPath"]));
-            }
-            set {
-                this["WhisperModelPath"] = value;
-            }
-        }
     }
 }

@@ -431,21 +431,6 @@
                         <!-- Вкладка SpeechToText (Готова для будущих элементов) -->
                         <TabItem Header="SpeechToText">
                             <StackPanel Margin="0,10,0,0">
-                                <TextBlock Text="МОДЕЛЬ И ОПЦИИ РАСПОЗНАВАНИЯ" Foreground="#991B1B" FontWeight="Bold" FontSize="11" Margin="0,0,0,6"/>
-
-                                <!-- Выбор файла модели Whisper (.bin) -->
-                                <TextBlock Text="Путь к модели Whisper (.bin):" Margin="0,0,0,4"/>
-                                <Grid Margin="0,0,0,10">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="54"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBox x:Name="TxtSttModelPath" IsReadOnly="True" Background="#0A0F1D" Foreground="#4B5563" FontSize="12"
-                     BorderBrush="#1F2937" Height="24" Padding="5,0" VerticalContentAlignment="Center"/>
-                                    <Button x:Name="BtnBrowseSttModel" Grid.Column="1" Content="Обзор" Click="BtnBrowseSttModel_Click" FontSize="12"
-                    Width="48" Height="24" Margin="6,0,0,0" Background="#1F2937" Foreground="White" BorderThickness="0" Cursor="Hand"/>
-                                </Grid>
-
                                 <TextBlock Text="ГОРЯЧИЕ КЛАВИШИ" Foreground="#991B1B" FontWeight="Bold" FontSize="11" Margin="0,0,0,6"/>
 
                                 <!-- Хоткей записи для КОМАНДНОГО чата -->
@@ -456,8 +441,8 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="Запись для союзного чата (Enter):" VerticalAlignment="Center"/>
                                     <TextBox x:Name="TxtSttTeamHotkey" Grid.Column="1" Text="7" Height="24" IsReadOnly="True" Focusable="True" 
-             PreviewKeyDown="KeyField_PreviewKeyDown" Cursor="Hand" Background="#2D1517" Foreground="#EF4444" 
-             FontWeight="Bold" FontSize="12" TextAlignment="Center" VerticalContentAlignment="Center" BorderBrush="#7F1D1D"/>
+                     PreviewKeyDown="KeyField_PreviewKeyDown" Cursor="Hand" Background="#2D1517" Foreground="#EF4444" 
+                     FontWeight="Bold" FontSize="12" TextAlignment="Center" VerticalContentAlignment="Center" BorderBrush="#7F1D1D"/>
                                 </Grid>
 
                                 <!-- Хоткей записи для ОБЩЕГО чата -->
@@ -468,17 +453,6 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="Запись для общего чата (Shift+Enter):" VerticalAlignment="Center"/>
                                     <TextBox x:Name="TxtSttAllHotkey" Grid.Column="1" Text="8" Height="24" IsReadOnly="True" Focusable="True" 
-             PreviewKeyDown="KeyField_PreviewKeyDown" Cursor="Hand" Background="#1E293B" Foreground="#38BDF8" 
-             FontWeight="Bold" FontSize="12" TextAlignment="Center" VerticalContentAlignment="Center" BorderBrush="#334155"/>
-                                </Grid>
-                                <!-- Хоткей открытия чата -->
-                                <Grid Margin="0,0,0,10">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="110"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="Клавиша открытия чата:" VerticalAlignment="Center"/>
-                                    <TextBox x:Name="TxtSttChatKey" Grid.Column="1" Text="Enter" Height="24" IsReadOnly="True" Focusable="True" 
                      PreviewKeyDown="KeyField_PreviewKeyDown" Cursor="Hand" Background="#1E293B" Foreground="#38BDF8" 
                      FontWeight="Bold" FontSize="12" TextAlignment="Center" VerticalContentAlignment="Center" BorderBrush="#334155"/>
                                 </Grid>

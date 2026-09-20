@@ -36,34 +36,21 @@ namespace VoicePhraseCast
 
         private const uint INPUT_KEYBOARD = 1;
         private const uint KEYEVENTF_KEYUP = 0x0002;
-        private const uint KEYEVENTF_KEYUP_FLAG = 0x0002;
 
         private const ushort VK_RETURN = 0x0D;  // Enter
         private const ushort VK_SHIFT = 0x10;   // Shift
         private const ushort VK_CONTROL = 0x11; // Ctrl
+        private const ushort VK_MENU = 0x12;    // Alt
         private const ushort VK_V = 0x56;       // V
 
         public static void SimulateKeyDown(ushort vkCode) => SendKeyEvent(vkCode, isKeyUp: false);
         public static void SimulateKeyUp(ushort vkCode) => SendKeyEvent(vkCode, isKeyUp: true);
 
-        public static async Task PressKeyAsync(ushort vkCode, bool withShift = false)
+        private static void ReleaseAllModifiers()
         {
-            if (withShift)
-            {
-                SimulateKeyDown(VK_SHIFT);
-                await Task.Delay(30);
-            }
-
-            SimulateKeyDown(vkCode);
-            await Task.Delay(40);
-            SimulateKeyUp(vkCode);
-            await Task.Delay(20);
-
-            if (withShift)
-            {
-                SimulateKeyUp(VK_SHIFT);
-                await Task.Delay(20);
-            }
+            SimulateKeyUp(VK_SHIFT);
+            SimulateKeyUp(VK_CONTROL);
+            SimulateKeyUp(VK_MENU);
         }
 
         private static void SendKeyEvent(ushort vkCode, bool isKeyUp)
@@ -88,8 +75,7 @@ namespace VoicePhraseCast
 
             if (result == 0)
             {
-                uint flags = isKeyUp ? KEYEVENTF_KEYUP_FLAG : 0;
-                keybd_event((byte)vkCode, (byte)scanCode, flags, UIntPtr.Zero);
+                keybd_event((byte)vkCode, (byte)scanCode, isKeyUp ? KEYEVENTF_KEYUP : 0, UIntPtr.Zero);
             }
         }
 
@@ -97,78 +83,66 @@ namespace VoicePhraseCast
         {
             if (string.IsNullOrWhiteSpace(text)) return;
 
-            // 0. Даем 150 мс, чтобы система окончательно зарегистрировала отпускание горячих клавиш пользователя
-            await Task.Delay(150);
-
-            // 1. Открытие чата (если задействована опция)
-            if (openChatFirst)
-            {
-                await PressKeyAsync(VK_RETURN, withShift: isAllChat);
-                await Task.Delay(100);
-            }
-
-            // 2. Буфер обмена
-            string? previousText = GetClipboardTextSafe();
-            SetClipboardTextSafe(text);
-            await Task.Delay(60);
-
-            // 3. Честная эмуляция Ctrl + V (Ctrl зажимается ДО V и отпускается ПОСЛЕ V)
-            SimulateKeyDown(VK_CONTROL);
-            await Task.Delay(40);
-
-            SimulateKeyDown(VK_V);
-            await Task.Delay(40);
-
-            SimulateKeyUp(VK_V);
-            await Task.Delay(40); // Гарантирует, что V поднялась раньше Ctrl
-
-            SimulateKeyUp(VK_CONTROL);
-            await Task.Delay(40);
-
-            // 4. Отправка сообщения
-            if (autoSendEnter)
-            {
-                await PressKeyAsync(VK_RETURN, withShift: false);
-            }
-
-            // 5. Восстановление буфера
-            await Task.Delay(100);
-            if (previousText != null)
-            {
-                SetClipboardTextSafe(previousText);
-            }
-        }
-
-        private static string? GetClipboardTextSafe()
-        {
-            string? text = null;
-            var thread = new Thread(() =>
-            {
-                try
-                {
-                    if (Clipboard.ContainsText()) text = Clipboard.GetText();
-                }
-                catch { }
-            });
-            thread.SetApartmentState(ApartmentState.STA);
-            thread.Start();
-            thread.Join();
-            return text;
-        }
-
-        private static void SetClipboardTextSafe(string text)
-        {
-            var thread = new Thread(() =>
+            // 1. Помещаем текст в буфер обмена Windows в ApartmentThread (STA)
+            Thread staThread = new Thread(() =>
             {
                 try
                 {
                     Clipboard.SetText(text);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Clipboard Error] {ex.Message}");
+                }
             });
-            thread.SetApartmentState(ApartmentState.STA);
-            thread.Start();
-            thread.Join();
+            staThread.SetApartmentState(ApartmentState.STA);
+            staThread.Start();
+            staThread.Join();
+
+            // 2. Отжимаем все модификаторы, которые пользователь мог зажать руками
+            ReleaseAllModifiers();
+            await Task.Delay(50);
+
+            // 3. Если требуется — открываем чат игры (Enter или Shift+Enter)
+            if (openChatFirst)
+            {
+                if (isAllChat)
+                {
+                    SimulateKeyDown(VK_SHIFT);
+                    await Task.Delay(30);
+                    SimulateKeyDown(VK_RETURN);
+                    await Task.Delay(40);
+                    SimulateKeyUp(VK_RETURN);
+                    SimulateKeyUp(VK_SHIFT);
+                }
+                else
+                {
+                    SimulateKeyDown(VK_RETURN);
+                    await Task.Delay(40);
+                    SimulateKeyUp(VK_RETURN);
+                }
+
+                // Задержка на анимацию открытия окна чата в игре
+                await Task.Delay(120);
+            }
+
+            // 4. Нажимаем Ctrl + V для вставки текста
+            SimulateKeyDown(VK_CONTROL);
+            await Task.Delay(30);
+            SimulateKeyDown(VK_V);
+            await Task.Delay(40);
+            SimulateKeyUp(VK_V);
+            SimulateKeyUp(VK_CONTROL);
+
+            await Task.Delay(60);
+
+            // 5. Нажимаем Enter для отправки сообщения (если включено)
+            if (autoSendEnter)
+            {
+                SimulateKeyDown(VK_RETURN);
+                await Task.Delay(40);
+                SimulateKeyUp(VK_RETURN);
+            }
         }
     }
 }

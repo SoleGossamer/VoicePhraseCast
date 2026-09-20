@@ -74,13 +74,6 @@ namespace VoicePhraseCast
                 InitializeFolderWatcher(savedPath); // Запускаем слежку за папкой при старте
             }
 
-            // --- Автозагрузка модели Whisper ---
-            string savedSttModelPath = VoicePhraseCast.Properties.Settings.Default.WhisperModelPath;
-            if (!string.IsNullOrEmpty(savedSttModelPath) && File.Exists(savedSttModelPath))
-            {
-                InitializeWhisperModel(savedSttModelPath);
-            }
-
             string actKey = VoicePhraseCast.Properties.Settings.Default.ActivationKey;
             string emuKey = VoicePhraseCast.Properties.Settings.Default.EmulationKey;
             string stopKey = VoicePhraseCast.Properties.Settings.Default.StopKey;
@@ -534,15 +527,12 @@ namespace VoicePhraseCast
                     {
                         if (vkCode == sttTeamVk || vkCode == sttAllVk)
                         {
-                            // Проверяем состояние записи через _processor
                             if (!_processor.IsSttRecording)
                             {
                                 _isTargetingAllChat = (vkCode == sttAllVk);
-
-                                // Запускаем накопление в AudioProcessor
                                 _processor.StartSttRecording();
 
-                                Dispatcher.Invoke(() => StatusText.Text = "Запись для Whisper...");
+                                Dispatcher.Invoke(() => StatusText.Text = "Запись речи (STT)...");
                             }
                         }
                     };
@@ -553,15 +543,12 @@ namespace VoicePhraseCast
                         {
                             if (_processor.IsSttRecording)
                             {
-                                // Забираем байты записи синхронно и мгновенно
                                 byte[] recordedAudio = _processor.StopSttRecording();
 
-                                // Выносим распознавание и ввод в отдельную фоновую задачу, освобождая поток хука!
                                 Task.Run(async () =>
                                 {
-                                    Dispatcher.Invoke(() => StatusText.Text = "Распознавание (Whisper)...");
+                                    Dispatcher.Invoke(() => StatusText.Text = "Распознавание (Vosk STT)...");
 
-                                    // Распознаем через Whisper
                                     string text = await _sttService.RecognizeBytesAsync(recordedAudio);
 
                                     if (!string.IsNullOrWhiteSpace(text))
@@ -572,7 +559,6 @@ namespace VoicePhraseCast
                                         bool openChat = false;
                                         bool sendEnter = false;
 
-                                        // Забираем флаги из потока UI
                                         Dispatcher.Invoke(() =>
                                         {
                                             autoPaste = ChkAutoPaste.IsChecked == true;
@@ -592,7 +578,7 @@ namespace VoicePhraseCast
                                     }
                                     else
                                     {
-                                        Dispatcher.Invoke(() => StatusText.Text = "Готово (речь не распознана)");
+                                        Dispatcher.Invoke(() => StatusText.Text = "Готово (речь не разобрана)");
                                     }
                                 });
                             }
@@ -605,6 +591,7 @@ namespace VoicePhraseCast
                     // Загрузка и инициализация языковых библиотек Vosk
                     string modelPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "model");
                     _processor.InitVosk(modelPath);
+                    _sttService.Initialize(modelPath);
 
                     // Активация аудиопотоков и установка глобального низкоуровневого хука клавиатуры
                     _processor.Start(mic.Id, cable.Id, monitor.Id);
@@ -645,56 +632,6 @@ namespace VoicePhraseCast
                     System.Windows.MessageBox.Show($"Ошибка при запуске: {ex.Message}\nПроверьте настройки клавиш.");
                 }
             }
-        }
-
-        private void BtnBrowseSttModel_Click(object sender, RoutedEventArgs e)
-        {
-            var dialog = new Microsoft.Win32.OpenFileDialog
-            {
-                Filter = "Whisper Model (*.bin)|*.bin|All Files (*.*)|*.*",
-                Title = "Выберите файл модели Whisper (.bin)"
-            };
-
-            if (dialog.ShowDialog() == true)
-            {
-                InitializeWhisperModel(dialog.FileName);
-
-                // Сохраняем путь к Whisper точно так же, как и LastPath
-                VoicePhraseCast.Properties.Settings.Default.WhisperModelPath = dialog.FileName;
-                VoicePhraseCast.Properties.Settings.Default.Save();
-            }
-        }
-
-        // Вынесенный вспомогательный метод инициализации
-        private void InitializeWhisperModel(string modelPath)
-        {
-            TxtSttModelPath.Text = modelPath;
-
-            _sttService?.Dispose();
-            _sttService = new SpeechToTextService();
-
-            _sttService.OnStatusChanged += (status) =>
-            {
-                Dispatcher.Invoke(() => StatusText.Text = status);
-            };
-
-            _sttService.OnTextRecognized += async (text) =>
-            {
-                await Dispatcher.Invoke(async () =>
-                {
-                    RecognizedText.Text = $"Whisper: {text}";
-
-                    //if (ChkAutoPaste.IsChecked == true)
-                    //{
-                    //    bool openChat = ChkOpenChatBeforePaste.IsChecked == true;
-                    //    bool sendEnter = ChkSendEnterAfterText.IsChecked == true;
-
-                    //    await TextInsertionService.InsertViaClipboardAsync(text, _isTargetingAllChat, openChat, sendEnter);
-                    //}
-                });
-            };
-
-            _sttService.Initialize(modelPath);
         }
 
         private void BtnStop_Click(object sender, RoutedEventArgs e)
