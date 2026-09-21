@@ -333,6 +333,54 @@
                                     <ComboBox x:Name="MonitorComboBox" DisplayMemberPath="Name" Grid.Row="2" Grid.Column="1"/>
                                 </Grid>
 
+                                <!-- Секция управления моделями Vosk -->
+                                <GroupBox Header="Модель распознавания речи (Vosk)" Margin="0,10,0,10" Padding="10">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Выпадающий список моделей -->
+                                        <ComboBox x:Name="CmbVoskModels" 
+                                            Grid.Row="0" Grid.Column="0" 
+                                            Margin="0,0,5,5" 
+                                            VerticalAlignment="Center"
+                                            SelectionChanged="CmbVoskModels_SelectionChanged"/>
+
+                                        <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
+                                            <!-- Кнопка Обновить -->
+                                            <Button x:Name="BtnRefreshModels" 
+                                                Content="🔄" Width="30" Height="26" Margin="0,0,5,0" 
+                                                ToolTip="Обновить список моделей"
+                                                Click="BtnRefreshModels_Click"/>
+
+                                            <!-- Кнопка Обзор / Выбрать папку -->
+                                            <Button x:Name="BtnBrowseModelFolder" 
+                                                Content="🔍 Выбрать..." Padding="8,2" Height="26" Margin="0,0,5,0" 
+                                                ToolTip="Указать папку с моделью на диске"
+                                                Click="BtnBrowseModelFolder_Click"/>
+
+                                            <!-- Кнопка Открыть папку models -->
+                                            <Button x:Name="BtnOpenModelsFolder" 
+                                                Content="📁 Папка" Padding="8,2" Height="26" 
+                                                ToolTip="Открыть системную папку models/ в Проводнике"
+                                                Click="BtnOpenModelsFolder_Click"/>
+                                        </StackPanel>
+
+                                        <!-- Текст-подсказка под комбобоксом -->
+                                        <TextBlock x:Name="TxtModelInfo" 
+                                            Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" 
+                                            Foreground="Gray" FontSize="11" TextWrapping="Wrap"
+                                            Text="Выберите модель для распознавания. Изменения применятся после перезагрузки модели."/>  
+                                    </Grid>
+                                </GroupBox>
+
                                 <TextBlock Text="БАЗА ЗВУКОВЫХ ФРАЗ" Foreground="#991B1B" FontWeight="Bold" FontSize="11" Margin="0,0,0,6"/>
                                 <Grid Margin="0,0,0,10">
                                     <Grid.ColumnDefinitions>

@@ -9,20 +9,20 @@ namespace VoicePhraseCast
 {
     public class SpeechToTextService : IDisposable
     {
-        private Model? _voskModel;
         private VoskRecognizer? _recognizer;
         private readonly object _lock = new();
+        private readonly TextFormattingService _formatter = new();
 
         public event Action<string>? OnStatusChanged;
 
         /// <summary>
-        /// Инициализация модели Vosk для STT
+        /// Инициализация распознавателя STT с использованием единого централизованного экземпляра Vosk.Model.
         /// </summary>
-        public void Initialize(string modelPath)
+        public void Initialize(Model sharedModel)
         {
-            if (!Directory.Exists(modelPath))
+            if (sharedModel == null)
             {
-                OnStatusChanged?.Invoke("Ошибка STT: Папка с моделью Vosk не найдена!");
+                OnStatusChanged?.Invoke("Ошибка STT: Передана пустая ссылка на Vosk.Model!");
                 return;
             }
 
@@ -30,9 +30,9 @@ namespace VoicePhraseCast
             {
                 lock (_lock)
                 {
-                    Vosk.Vosk.SetLogLevel(-1);
-                    _voskModel = new Model(modelPath);
-                    _recognizer = new VoskRecognizer(_voskModel, 16000.0f);
+                    _recognizer?.Dispose();
+                    // Создаем отдельный recognizer для STT с частотой 16 кГц
+                    _recognizer = new VoskRecognizer(sharedModel, 16000.0f);
                     _recognizer.SetMaxAlternatives(0);
                     _recognizer.SetWords(false);
                 }
@@ -45,9 +45,6 @@ namespace VoicePhraseCast
             }
         }
 
-        /// <summary>
-        /// Принимает сырые байты PCM (44.1 кГц, 16 бит, Mono), ресемплирует до 16 кГц и распознает текст.
-        /// </summary>
         public Task<string> RecognizeBytesAsync(byte[] pcm44100Bytes)
         {
             if (pcm44100Bytes == null || pcm44100Bytes.Length == 0)
@@ -55,18 +52,8 @@ namespace VoicePhraseCast
 
             if (_recognizer == null)
             {
-                // Резервная инициализация, если модель лежит в папке приложения по умолчанию
-                string defaultPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "model");
-                if (Directory.Exists(defaultPath))
-                {
-                    Initialize(defaultPath);
-                }
-
-                if (_recognizer == null)
-                {
-                    OnStatusChanged?.Invoke("Ошибка: Модель STT не инициализирована!");
-                    return Task.FromResult(string.Empty);
-                }
+                OnStatusChanged?.Invoke("Ошибка: Модель STT не инициализирована!");
+                return Task.FromResult(string.Empty);
             }
 
             return Task.Run(() =>
@@ -75,17 +62,17 @@ namespace VoicePhraseCast
                 {
                     OnStatusChanged?.Invoke("Распознавание речи...");
 
-                    // 1. Делаем сырой PCM 44.1 кГц
                     var waveFormat = new WaveFormat(44100, 16, 1);
                     using var inputStream = new MemoryStream(pcm44100Bytes);
                     using var rawProvider = new RawSourceWaveStream(inputStream, waveFormat);
 
-                    // 2. Ресемплируем в 16000 Гц
                     var resampler = new WdlResamplingSampleProvider(rawProvider.ToSampleProvider(), 16000);
                     var sampleProvider16 = resampler.ToWaveProvider16();
 
                     byte[] buffer = new byte[4096];
                     int bytesRead;
+
+                    string rawText = string.Empty;
 
                     lock (_lock)
                     {
@@ -97,10 +84,11 @@ namespace VoicePhraseCast
                         }
 
                         string jsonResult = _recognizer.FinalResult();
-                        string text = ExtractTextFromJson(jsonResult);
-
-                        return text;
+                        rawText = ExtractTextFromJson(jsonResult);
                     }
+
+                    string formattedText = _formatter.Format(rawText);
+                    return formattedText;
                 }
                 catch (Exception ex)
                 {
@@ -130,7 +118,8 @@ namespace VoicePhraseCast
             lock (_lock)
             {
                 _recognizer?.Dispose();
-                _voskModel?.Dispose();
+                _recognizer = null;
+                // Vosk.Model НЕ освобождаем здесь, так как она принадлежит главному контейнеру/окну
             }
         }
     }

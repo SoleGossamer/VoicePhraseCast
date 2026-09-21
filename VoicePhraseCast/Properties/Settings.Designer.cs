@@ -178,5 +178,17 @@ namespace VoicePhraseCast.Properties {
                 this["SttAllHotkey"] = value;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string SelectedModelPath {
+            get {
+                return ((string)(this["SelectedModelPath"]));
+            }
+            set {
+                this["SelectedModelPath"] = value;
+            }
+        }
     }
 }

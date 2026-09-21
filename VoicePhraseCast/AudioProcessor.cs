@@ -21,7 +21,7 @@ using Vosk;
 
 namespace DotaVoiceAssistant
 {
-    public class AudioProcessor
+    public class AudioProcessor : IDisposable
     {
         private WaveInEvent? _micInput;
         private WaveOutEvent? _virtualOutput;
@@ -35,6 +35,7 @@ namespace DotaVoiceAssistant
 
         private VoskRecognizer? _recognizer;
         private Model? _voskModel;
+        private bool _isModelExternal = false;
         private bool _isPlaying = false;
         private readonly object _voskLock = new object();
 
@@ -43,102 +44,52 @@ namespace DotaVoiceAssistant
         private const uint KEYEVENTF_KEYUP = 0x0002;
         private string _lastLoadedFolderPath = string.Empty;
 
-        public byte CurrentEmulationKey { get; set; } = 0x47; // По умолчанию клавиша 'G'
+        public byte CurrentEmulationKey { get; set; } = 0x47; // По умолчанию 'G'
         public bool IsMonitoringEnabled { get; set; } = false;
         public bool IsListenMode { get; private set; } = false;
         public bool IsEmulationEnabled { get; set; } = true;
 
-        // Настройки громкости для наушников (мониторинг) и для виртуального кабеля
         public float VolumeMic { get; set; } = 1.0f;
         public float VolumeCable { get; set; } = 1.0f;
 
         private Dictionary<string, List<string>> _phraseFiles = new Dictionary<string, List<string>>();
         public Action<string>? OnPhraseRecognized;
-
-        private readonly string _modelPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "model");
-        private const string VoskModelUrl = "https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip";
         private CancellationTokenSource? _soundCancelTokenSource;
         public event Action? OnSoundFinished;
 
-        // Передача статуса инициализации во внешний UI-поток
         public event Action<string>? OnVoskStatusChanged;
         private DateTime _lastPlayTime = DateTime.MinValue;
-
 
         private MemoryStream? _sttAudioBuffer;
         private readonly object _sttLock = new();
         public bool IsSttRecording { get; private set; }
 
-        public async Task InitializeVoskAsync()
+        /// <summary>
+        /// Загружает или подключает существующую модель Vosk, инициализирует recognizer (44.1 кГц) 
+        /// и возвращает ссылку на загруженную Vosk.Model.
+        /// </summary>
+        public async Task<Model?> InitializeVoskAsync(Model sharedModel)
         {
             try
             {
-                if (!Directory.Exists(_modelPath))
-                {
-                    OnVoskStatusChanged?.Invoke("Модель ИИ отсутствует. Скачивание (около 50 МБ)...");
-                    await DownloadAndExtractModelAsync();
-                }
+                if (sharedModel == null) return null;
 
-                OnVoskStatusChanged?.Invoke("Загрузка модели ИИ in-memory...");
+                _voskModel = sharedModel;
+                _isModelExternal = true;
 
-                // Фоновая инициализация Vosk для предотвращения блокировки UI-потока
                 await Task.Run(() =>
                 {
-                    Vosk.Vosk.SetLogLevel(-1); // Отключение логов Vosk в стандартную консоль
-                    _voskModel = new Vosk.Model(_modelPath);
-                    _recognizer = new Vosk.VoskRecognizer(_voskModel, 44100.0f);
+                    _recognizer = new VoskRecognizer(_voskModel, 44100.0f);
                 });
 
-                OnVoskStatusChanged?.Invoke("Модель ИИ успешно загружена и готова.");
+                OnVoskStatusChanged?.Invoke("Модель ИИ успешно подключена.");
+                return _voskModel;
             }
             catch (Exception ex)
             {
                 OnVoskStatusChanged?.Invoke($"Ошибка ИИ: {ex.Message}");
                 Debug.WriteLine($"[Vosk Init Error] {ex}");
-            }
-        }
-
-        private async Task DownloadAndExtractModelAsync()
-        {
-            string zipPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "vosk_model.zip");
-            string tempExtractPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "temp_model");
-
-            using (var client = new HttpClient())
-            {
-                var response = await client.GetAsync(VoskModelUrl);
-                response.EnsureSuccessStatusCode();
-                using (var fs = new FileStream(zipPath, FileMode.Create, FileAccess.Write, FileShare.None))
-                {
-                    await response.Content.CopyToAsync(fs);
-                }
-            }
-
-            OnVoskStatusChanged?.Invoke("Распаковка модели ИИ...");
-
-            if (Directory.Exists(tempExtractPath)) Directory.Delete(tempExtractPath, true);
-            ZipFile.ExtractToDirectory(zipPath, tempExtractPath);
-
-            // Извлечение целевой директории из вложенной структуры архива
-            string innerFolder = Directory.GetDirectories(tempExtractPath)[0];
-            Directory.Move(innerFolder, _modelPath);
-
-            if (File.Exists(zipPath)) File.Delete(zipPath);
-            if (Directory.Exists(tempExtractPath)) Directory.Delete(tempExtractPath, true);
-        }
-
-        public void InitVosk(string modelPath)
-        {
-            if (_voskModel != null) return;
-
-            try
-            {
-                _voskModel = new Model(modelPath);
-                _recognizer = new VoskRecognizer(_voskModel, 44100.0f); // Инициализация под частоту дискретизации микрофона
-                Debug.WriteLine("[Vosk] Модель успешно загружена.");
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[Vosk Error] Ошибка загрузки модели: {ex.Message}");
+                return null;
             }
         }
 
@@ -169,7 +120,6 @@ namespace DotaVoiceAssistant
 
             try
             {
-                // Рекурсивный поиск всех файлов в исходной директории
                 var allFiles = Directory.GetFiles(folderPath, "*.*", SearchOption.AllDirectories);
 
                 foreach (var file in allFiles)
@@ -179,11 +129,7 @@ namespace DotaVoiceAssistant
                     if (extensions.Contains(ext))
                     {
                         string fileName = Path.GetFileNameWithoutExtension(file).ToLower().Trim();
-
-                        // Удаление метаданных и комментариев в круглых скобках из имени файла
                         string cleanKey = System.Text.RegularExpressions.Regex.Replace(fileName, @"\s*\(.*?\)", "").Trim();
-
-                        // Удаление служебных цифровых индексов на конце строки (например, "фраза 1" -> "фраза")
                         cleanKey = System.Text.RegularExpressions.Regex.Replace(cleanKey, @"\s+\d+$", "").Trim();
 
                         if (!_phraseFiles.ContainsKey(cleanKey))
@@ -230,7 +176,6 @@ namespace DotaVoiceAssistant
             int micId = -1;
             int cableId = -1;
 
-            // Сканирование физических устройств записи звука
             for (int i = 0; i < WaveIn.DeviceCount; i++)
             {
                 string name = WaveIn.GetCapabilities(i).ProductName;
@@ -244,13 +189,11 @@ namespace DotaVoiceAssistant
                 }
             }
 
-            // Сканирование системных аудиовыходов для виртуального кабеля
             for (int i = 0; i < WaveOut.DeviceCount; i++)
             {
                 string name = WaveOut.GetCapabilities(i).ProductName;
                 Debug.WriteLine($"[Audio Scan] Устройство вывода [{i}]: {name}");
 
-                // Приоритетный выбор многоканального виртуального кабеля (16ch)
                 if (name.Contains("16ch", StringComparison.OrdinalIgnoreCase))
                 {
                     cableId = i;
@@ -258,7 +201,6 @@ namespace DotaVoiceAssistant
                 }
             }
 
-            // Резервный поиск стандартного виртуального аудиокабеля при отсутствии 16ch-версии
             if (cableId == -1)
             {
                 for (int i = 0; i < WaveOut.DeviceCount; i++)
@@ -293,7 +235,6 @@ namespace DotaVoiceAssistant
             int sampleRate = 44100;
             var format = new WaveFormat(sampleRate, 1);
 
-            // Конфигурация микширования и буферизации для виртуального кабеля
             _mixer = new MixingSampleProvider(WaveFormat.CreateIeeeFloatWaveFormat(sampleRate, 1)) { ReadFully = true };
             _cableBuffer = new BufferedWaveProvider(format) { DiscardOnBufferOverflow = true };
             _mixer.AddMixerInput(_cableBuffer.ToSampleProvider());
@@ -301,7 +242,6 @@ namespace DotaVoiceAssistant
             _virtualOutput = new WaveOutEvent { DeviceNumber = cableIndex, DesiredLatency = 100 };
             _virtualOutput.Init(_mixer);
 
-            // Конфигурация микширования для аппаратного локального мониторинга (наушники)
             _monitorMixer = new MixingSampleProvider(WaveFormat.CreateIeeeFloatWaveFormat(sampleRate, 1)) { ReadFully = true };
             _monitorBuffer = new BufferedWaveProvider(format) { DiscardOnBufferOverflow = true };
             _monitorMixer.AddMixerInput(_monitorBuffer.ToSampleProvider());
@@ -310,7 +250,6 @@ namespace DotaVoiceAssistant
             _monitorOutput.Init(_monitorMixer);
             _monitorOutput.Volume = IsMonitoringEnabled ? 1.0f : 0.0f;
 
-            // Конфигурация входящего потока микрофона
             _micInput = new WaveInEvent
             {
                 DeviceNumber = micIndex,
@@ -320,7 +259,6 @@ namespace DotaVoiceAssistant
 
             _micInput.DataAvailable += (s, e) =>
             {
-                // 1. Запись сырого аудиопотока в буфер для Whisper (STT)
                 if (IsSttRecording)
                 {
                     lock (_sttLock)
@@ -329,17 +267,11 @@ namespace DotaVoiceAssistant
                     }
                 }
 
-                // 2. Маршрутизация голоса в виртуальный кабель
                 if (!_isPlaying && !IsListenMode)
                 {
                     _cableBuffer?.AddSamples(e.Buffer, 0, e.BytesRecorded);
                 }
-                else
-                {
-                    // Во время воспроизведения фразы входящие сэмплы микрофона игнорируются
-                }
 
-                // 3. Передача захваченных аудио-данных в конвейер распознавания Vosk
                 if (IsListenMode && _recognizer != null)
                 {
                     lock (_voskLock)
@@ -371,7 +303,6 @@ namespace DotaVoiceAssistant
 
             if (cableMixer == null || !File.Exists(path)) return;
 
-            // Прерывание текущего воспроизведения при поступлении новой команды
             StopCurrentSound();
 
             _soundCancelTokenSource = new CancellationTokenSource();
@@ -398,23 +329,19 @@ namespace DotaVoiceAssistant
                         volumeHead = new VolumeSampleProvider(resampler2.ToMono()) { Volume = VolumeMic };
                     }
 
-                    // Активация программного зажатия клавиши голосового чата целевого приложения
                     if (IsEmulationEnabled)
                     {
                         keybd_event(CurrentEmulationKey, 0, 0, 0);
                     }
                     Thread.Sleep(150);
 
-                    // Одновременная маршрутизация сэмпла в аудиомикшеры кабеля и наушников
                     cableMixer.AddMixerInput(volumeCable);
                     if (volumeHead != null && headMixer != null)
                     {
                         headMixer.AddMixerInput(volumeHead);
                     }
 
-                    // Ожидание завершения трека на базе прецизионного аппаратного таймера Stopwatch
-                    int durationMs = (int)reader.TotalTime.TotalMilliseconds + 300; // 300 мс статического технологического запаса
-
+                    int durationMs = (int)reader.TotalTime.TotalMilliseconds + 300;
                     var stopwatch = Stopwatch.StartNew();
 
                     while (stopwatch.ElapsedMilliseconds < durationMs)
@@ -435,7 +362,6 @@ namespace DotaVoiceAssistant
                 }
                 finally
                 {
-                    // Деактивация эмуляции клавиши голосового чата в конечном автомате
                     if (IsEmulationEnabled)
                     {
                         keybd_event(CurrentEmulationKey, 0, KEYEVENTF_KEYUP, 0);
@@ -485,9 +411,6 @@ namespace DotaVoiceAssistant
                     int bestScore = 0;
                     var inputWords = cleanText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
-                    // =========================================================================
-                    // ШАГ 1: ТОЧНОЕ ИЛИ МАКСИМАЛЬНО БЛИЗКОЕ СОВПАДЕНИЕ (RatioScorer)
-                    // =========================================================================
                     var strictResult = FuzzySharp.Process.ExtractOne(
                         cleanText,
                         _phraseFiles.Keys,
@@ -502,12 +425,8 @@ namespace DotaVoiceAssistant
                         Debug.WriteLine($"[Шаг 1 - Strict] Найдено: '{bestMatchKey}' со Score: {bestScore}");
                     }
 
-                    // =========================================================================
-                    // ШАГ 2: СИСТЕМНЫЙ ПЕРЕХВАТ ДЛЯ ДЛИННЫХ ФРАЗ (СИМВОЛЬНЫЙ АНАЛИЗ)
-                    // =========================================================================
                     if (bestMatchKey == null && cleanText.Length > 5)
                     {
-                        // Нормализация ввода в сплошной строковый массив символов без пробелов
                         string flatCleanText = cleanText.Replace(" ", "");
 
                         var betterLongKey = _phraseFiles.Keys
@@ -516,13 +435,10 @@ namespace DotaVoiceAssistant
                                 if (k.Length <= cleanText.Length) return false;
 
                                 string flatKey = k.Replace(" ", "");
-
-                                // Проверка вхождения нормализованного ввода как прямой подстроки
                                 bool isSubstring = flatKey.Contains(flatCleanText);
 
                                 if (!isSubstring)
                                 {
-                                    // Применение нечеткого сравнения плоских строк для компенсации вариативности окончаний
                                     var partialResult = FuzzySharp.Process.ExtractOne(
                                         flatCleanText,
                                         new[] { flatKey },
@@ -543,9 +459,6 @@ namespace DotaVoiceAssistant
                         }
                     }
 
-                    // =========================================================================
-                    // ШАГ 3: ПОИСК ПО НАБОРУ СЛОВ (TokenSetScorer С ДВУХСТОРОННЕЙ ЗАЩИТОЙ)
-                    // =========================================================================
                     if (bestMatchKey == null)
                     {
                         var tokenResult = FuzzySharp.Process.ExtractOne(
@@ -557,10 +470,7 @@ namespace DotaVoiceAssistant
 
                         if (tokenResult != null && tokenResult.Score > 85)
                         {
-                            // Верхний лимит: Валидация длинного ввода против короткого кандидата
                             bool isCandidateTooShort = cleanText.Length > tokenResult.Value.Length + 4;
-
-                            // Нижний лимит: Валидация ультракороткого ввода против избыточного кандидата
                             bool isCandidateTooLong = cleanText.Length <= 5 && tokenResult.Value.Length > cleanText.Length + 4;
 
                             if (isCandidateTooShort)
@@ -580,9 +490,6 @@ namespace DotaVoiceAssistant
                         }
                     }
 
-                    // =========================================================================
-                    // ШАГ 4: КАСКАДНЫЙ ОТКАТ НА ЧАСТИЧНЫЙ ПОИСК (PartialRatioScorer)
-                    // =========================================================================
                     if (bestMatchKey == null)
                     {
                         var topPartialResults = FuzzySharp.Process.ExtractTop(
@@ -597,17 +504,14 @@ namespace DotaVoiceAssistant
                         {
                             if (res.Score <= 75) return false;
 
-                            // Двухсторонний контроль граничных условий по длине строк
                             if (cleanText.Length > res.Value.Length + 4) return false;
                             if (cleanText.Length <= 5 && res.Value.Length > cleanText.Length + 5) return false;
 
-                            // Пословная верификация для атомарных и сверхкоротких ключей
                             if (res.Value.Length <= 4)
                             {
                                 return inputWords.Contains(res.Value);
                             }
 
-                            // Проверка пересечения токенов или взаимного вхождения плоских символьных структур
                             var wordsInKey = res.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                             bool hasWholeWordMatch = inputWords.Any(w => wordsInKey.Contains(w));
 
@@ -630,12 +534,8 @@ namespace DotaVoiceAssistant
                         }
                     }
 
-                    // =========================================================================
-                    // ИНИЦИАЛИЗАЦИЯ ТРАКТА ВОСПРОИЗВЕДЕНИЯ ЗВУКА
-                    // =========================================================================
                     if (bestMatchKey != null && bestScore > 75)
                     {
-                        // Защита от дублирующих конкурентных вызовов (дребезг триггеров)
                         if ((DateTime.Now - _lastPlayTime).TotalMilliseconds < 1000) return;
 
                         List<string> availableFiles = _phraseFiles[bestMatchKey];
@@ -650,8 +550,6 @@ namespace DotaVoiceAssistant
                     else
                     {
                         Debug.WriteLine("[FuzzySharp] Отмена: Ничего не подошло.");
-
-                        // Сохранение очищенной нераспознанной фразы на диск F:
                         SaveMissingPhrase(cleanText);
                     }
                 }
@@ -691,11 +589,9 @@ namespace DotaVoiceAssistant
 
                 lock (_fileLock)
                 {
-                    // Проверяем существование файла. Если его нет — AppendAllText создаст его автоматически.
                     if (File.Exists(filePath))
                     {
                         var existingLines = File.ReadAllLines(filePath, Encoding.UTF8);
-                        // Пропускаем запись, если такая фраза уже фиксировалась (без учета регистра)
                         if (Array.Exists(existingLines, line => line.Equals(phrase, StringComparison.OrdinalIgnoreCase)))
                         {
                             return;
@@ -733,6 +629,30 @@ namespace DotaVoiceAssistant
                 _sttAudioBuffer.Dispose();
                 _sttAudioBuffer = null;
                 return audioData;
+            }
+        }
+
+        public void Dispose()
+        {
+            Stop();
+            StopCurrentSound();
+
+            lock (_voskLock)
+            {
+                _recognizer?.Dispose();
+                _recognizer = null;
+
+                if (!_isModelExternal)
+                {
+                    _voskModel?.Dispose();
+                    _voskModel = null;
+                }
+            }
+
+            lock (_sttLock)
+            {
+                _sttAudioBuffer?.Dispose();
+                _sttAudioBuffer = null;
             }
         }
     }

@@ -41,5 +41,8 @@
     <Setting Name="SttAllHotkey" Type="System.String" Scope="User">
       <Value Profile="(Default)">8</Value>
     </Setting>
+    <Setting Name="SelectedModelPath" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
   </Settings>
 </SettingsFile>

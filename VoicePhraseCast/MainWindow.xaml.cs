@@ -13,6 +13,7 @@ using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
+using Vosk;
 using Color = System.Windows.Media.Color;
 
 
@@ -63,7 +64,7 @@ namespace VoicePhraseCast
                 }));
             };
 
-            Task.Run(async () => await _processor.InitializeVoskAsync());
+            Loaded += Window_Loaded;
 
             // --- Автозагрузка папки с фразами ---
             string savedPath = VoicePhraseCast.Properties.Settings.Default.LastPath;
@@ -166,20 +167,68 @@ namespace VoicePhraseCast
             _isDataLoaded = true;
         }
 
+        private ModelManager _modelManager = new ModelManager();
+        private Vosk.Model? _sharedVoskModel;
+
+        private async void Window_Loaded(object sender, RoutedEventArgs e)
+        {
+            // 1. Получаем путь к правильной модели через ModelManager
+            string? modelPath = await _modelManager.EnsureModelAvailableAsync(status =>
+            {
+                StatusText.Text = status;
+            });
+
+            if (string.IsNullOrEmpty(modelPath))
+            {
+                System.Windows.MessageBox.Show("Не удалось загрузить или скачать модель Vosk.");
+                return;
+            }
+
+            // Сохраняем путь в настройки, если там было пусто
+            if (string.IsNullOrEmpty(VoicePhraseCast.Properties.Settings.Default.SelectedModelPath))
+            {
+                VoicePhraseCast.Properties.Settings.Default.SelectedModelPath = modelPath;
+                VoicePhraseCast.Properties.Settings.Default.Save();
+            }
+
+            // 2. Создаем единую Vosk.Model в фоновом потоке
+            await Task.Run(() =>
+            {
+                Vosk.Vosk.SetLogLevel(-1);
+                _sharedVoskModel = new Vosk.Model(modelPath);
+            });
+
+            // 3. Передаем sharedModel в наши сервисы
+            if (_sharedVoskModel != null)
+            {
+                await _processor.InitializeVoskAsync(_sharedVoskModel);
+                _sttService.Initialize(_sharedVoskModel);
+            }
+
+            // 4. Заполняем ComboBox моделями и отображаем активную в UI
+            LoadVoskModelsToUi();
+        }
+
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
-            // Останавливаем слежку за файлами
+            // 1. Останавливаем слежку за файлами
             if (_folderWatcher != null)
             {
                 _folderWatcher.EnableRaisingEvents = false;
                 _folderWatcher.Dispose();
             }
 
-            // Освобождение системного хука клавиатуры перед завершением процесса
+            // 2. Освобождение системного хука клавиатуры
             _hook.Unhook();
 
-            // Остановка всех потоков аудиопроцессора
-            _processor.Stop();
+            // 3. Освобождение сервиса STT (закрывает свой VoskRecognizer)
+            _sttService.Dispose();
+
+            // 4. Освобождение аудиопроцессора (останавливает запись/воспроизведение и выгружает свой VoskRecognizer)
+            _processor.Dispose();
+
+            // 5. Выгрузка единого shared-экземпляра Vosk.Model из оперативной памяти
+            _sharedVoskModel?.Dispose();
 
             base.OnClosing(e);
         }
@@ -588,11 +637,6 @@ namespace VoicePhraseCast
                     // Синхронизация состояния мониторинга звука в наушниках
                     _processor.IsMonitoringEnabled = ChkMonitor.IsChecked ?? false;
 
-                    // Загрузка и инициализация языковых библиотек Vosk
-                    string modelPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "model");
-                    _processor.InitVosk(modelPath);
-                    _sttService.Initialize(modelPath);
-
                     // Активация аудиопотоков и установка глобального низкоуровневого хука клавиатуры
                     _processor.Start(mic.Id, cable.Id, monitor.Id);
                     _hook.SetHook();
@@ -636,27 +680,27 @@ namespace VoicePhraseCast
 
         private void BtnStop_Click(object sender, RoutedEventArgs e)
         {
+            StopBridge();
+        }
+
+        private void StopBridge()
+        {
             _hook.Unhook();
+            _hook.ClearSubscribers(); // Очищаем подписки, чтобы не плодить дубли
             _processor.Stop();
 
-            // Фиксация состояния остановки моста для разрешения повторного запуска
             _isBridgeRunning = false;
 
-            // Обновление статуса интерфейса для наглядности
             StatusText.Text = "Статус: Остановлено";
             StatusText.Foreground = System.Windows.Media.Brushes.Red;
 
             BtnStop.IsEnabled = false;
 
-            // Возврат кнопки "Старт" в исходное состояние для повторного запуска
             BtnStart.Content = "ЗАПУСТИТЬ МОСТ";
-
-            // Возврат цветовой схемы кнопки Старт к исходным XAML-значениям по умолчанию
             var defaultColor = (Color)System.Windows.Media.ColorConverter.ConvertFromString("#1E2937");
             BtnStart.Background = new SolidColorBrush(defaultColor);
             BtnStart.Foreground = System.Windows.Media.Brushes.White;
 
-            // Возврат полей ввода горячих клавиш в активное состояние для редактирования
             TxtActivationKey.IsEnabled = true;
             TxtEmulationKey.IsEnabled = true;
             TxtStopKey.IsEnabled = true;
@@ -1024,6 +1068,244 @@ namespace VoicePhraseCast
                     StatusText.Text = "База фраз обновлена автоматически";
                 }
             }));
+        }
+
+        private bool _isUpdatingUi = false; // Флаг для предотвращения лишних срабатываний при первоначальной загрузке
+
+        private void LoadVoskModelsToUi()
+        {
+            _isUpdatingUi = true;
+            try
+            {
+                CmbVoskModels.Items.Clear();
+
+                var availableModels = _modelManager.GetAvailableModels();
+
+                if (availableModels.Count == 0)
+                {
+                    TxtModelInfo.Text = "Валидные модели не найдены в папке models/";
+                    return;
+                }
+
+                string currentSelectedPath = Properties.Settings.Default.SelectedModelPath;
+                int selectedIndex = 0;
+
+                for (int i = 0; i < availableModels.Count; i++)
+                {
+                    string fullPath = availableModels[i];
+                    string folderName = System.IO.Path.GetFileName(fullPath); // Покажем только красивое имя папки
+
+                    // Добавляем элемент в ComboBox (сохраняем путь в Tag, имя в Content)
+                    var item = new ComboBoxItem
+                    {
+                        Content = folderName,
+                        Tag = fullPath
+                    };
+
+                    CmbVoskModels.Items.Add(item);
+
+                    // Если путь совпадает с сохраненным в настройках — запоминаем индекс
+                    if (!string.IsNullOrEmpty(currentSelectedPath) &&
+                        fullPath.Equals(currentSelectedPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        selectedIndex = i;
+                    }
+                }
+
+                CmbVoskModels.SelectedIndex = selectedIndex;
+                TxtModelInfo.Text = $"Активная модель: {System.IO.Path.GetFileName(availableModels[selectedIndex])}";
+            }
+            finally
+            {
+                _isUpdatingUi = false;
+            }
+        }
+
+        // Выбор модели из списка
+        private async void CmbVoskModels_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isUpdatingUi || CmbVoskModels.SelectedItem is not ComboBoxItem selectedItem) return;
+
+            string newModelPath = selectedItem.Tag?.ToString() ?? "";
+
+            if (string.IsNullOrEmpty(newModelPath)) return;
+
+            // Сохраняем выбранную модель в Settings
+            Properties.Settings.Default.SelectedModelPath = newModelPath;
+            Properties.Settings.Default.Save();
+
+            TxtModelInfo.Text = $"Модель изменена на: {selectedItem.Content}. Перезагрузка ИИ...";
+
+            // Здесь можно либо попросить пользователя перезапустить приложение,
+            // либо на лету перезагрузить Vosk.Model:
+            await ReloadVoskModelAsync(newModelPath);
+        }
+
+        // Кнопка обновления списка моделей
+        private void BtnRefreshModels_Click(object sender, RoutedEventArgs e)
+        {
+            LoadVoskModelsToUi();
+        }
+
+        // Кнопка открытия папки models/
+        private void BtnOpenModelsFolder_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                string modelsDir = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "models");
+                if (!System.IO.Directory.Exists(modelsDir))
+                {
+                    System.IO.Directory.CreateDirectory(modelsDir);
+                }
+                System.Diagnostics.Process.Start("explorer.exe", modelsDir);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Folder Error] Не удалось открыть папку: {ex.Message}");
+            }
+        }
+
+        private async Task ReloadVoskModelAsync(string newModelPath)
+        {
+            bool wasBridgeRunning = _isBridgeRunning;
+
+            try
+            {
+                TxtModelInfo.Text = "Остановка аудиопотока и ИИ...";
+
+                // 1. Явно останавливаем мост и снимаем хуки
+                if (wasBridgeRunning)
+                {
+                    StopBridge();
+                }
+
+                // 2. Освобождаем текущие сервисы
+                _sttService.Dispose();
+                _processor.Dispose();
+
+                if (_sharedVoskModel != null)
+                {
+                    _sharedVoskModel.Dispose();
+                    _sharedVoskModel = null;
+                }
+
+                TxtModelInfo.Text = "Загрузка новой модели в ОЗУ (это может занять время)...";
+
+                // 3. Загружаем модель в фоновом потоке
+                await Task.Run(() =>
+                {
+                    Vosk.Vosk.SetLogLevel(-1);
+                    _sharedVoskModel = new Vosk.Model(newModelPath);
+                });
+
+                // 4. Инициализируем сервисы заново
+                if (_sharedVoskModel != null)
+                {
+                    await _processor.InitializeVoskAsync(_sharedVoskModel);
+                    _sttService.Initialize(_sharedVoskModel);
+                }
+
+                TxtModelInfo.Text = $"Модель '{System.IO.Path.GetFileName(newModelPath)}' успешно загружена!";
+
+                // 5. Если мост работал — запускаем его заново
+                if (wasBridgeRunning)
+                {
+                    // Используем Dispatcher, чтобы UI полностью обновил состояние перед стартом
+                    Dispatcher.Invoke(() =>
+                    {
+                        BtnStart_Click(this, new RoutedEventArgs());
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                TxtModelInfo.Text = $"Ошибка загрузки модели: {ex.Message}";
+                System.Windows.MessageBox.Show($"Не удалось перезагрузить модель:\n{ex.Message}", "Ошибка ИИ", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async void BtnBrowseModelFolder_Click(object sender, RoutedEventArgs e)
+        {
+            // Стандартный диалог выбора папки (.NET 6+)
+            var dialog = new Microsoft.Win32.OpenFolderDialog
+            {
+                Title = "Выберите папку с моделью Vosk (должна содержать папки 'conf' и 'am')",
+                Multiselect = false
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                string selectedFolderPath = dialog.FolderName;
+
+                // 1. Проверяем валидность выбранной папки
+                if (!_modelManager.IsValidModelFolder(selectedFolderPath))
+                {
+                    System.Windows.MessageBox.Show(
+                        "Выбранная папка не является валидной моделью Vosk!\n" +
+                        "Внутри папки обязательно должны присутствовать подпапки 'conf' и 'am'.",
+                        "Ошибка выбора модели",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    return;
+                }
+
+                string folderName = System.IO.Path.GetFileName(selectedFolderPath);
+                string targetPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "models", folderName);
+
+                try
+                {
+                    // 2. Если папка находится вне системной директории models/, копируем её туда
+                    if (!selectedFolderPath.Equals(targetPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (System.IO.Directory.Exists(targetPath))
+                        {
+                            var result = System.Windows.MessageBox.Show(
+                                $"Модель с именем '{folderName}' уже существует в папке models/. Перезаписать?",
+                                "Подтверждение", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+                            if (result != MessageBoxResult.Yes) return;
+
+                            System.IO.Directory.Delete(targetPath, true);
+                        }
+
+                        TxtModelInfo.Text = $"Копирование модели '{folderName}' в папку models/...";
+
+                        await Task.Run(() => CopyDirectory(selectedFolderPath, targetPath));
+                    }
+
+                    // 3. Обновляем настройки и UI
+                    Properties.Settings.Default.SelectedModelPath = targetPath;
+                    Properties.Settings.Default.Save();
+
+                    LoadVoskModelsToUi();
+
+                    // 4. Перезагружаем модель в приложении
+                    await ReloadVoskModelAsync(targetPath);
+                }
+                catch (Exception ex)
+                {
+                    System.Windows.MessageBox.Show($"Не удалось добавить модель: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        // Вспомогательный метод рекурсивного копирования папки
+        private void CopyDirectory(string sourceDir, string destinationDir)
+        {
+            var dir = new System.IO.DirectoryInfo(sourceDir);
+            if (!dir.Exists) return;
+
+            System.IO.Directory.CreateDirectory(destinationDir);
+
+            foreach (var file in dir.GetFiles())
+            {
+                file.CopyTo(System.IO.Path.Combine(destinationDir, file.Name), true);
+            }
+
+            foreach (var subDir in dir.GetDirectories())
+            {
+                CopyDirectory(subDir.FullName, System.IO.Path.Combine(destinationDir, subDir.Name));
+            }
         }
 
         [System.Runtime.InteropServices.DllImport("user32.dll")]
