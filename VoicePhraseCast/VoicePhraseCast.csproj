@@ -1,61 +1,58 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <UseWPF>true</UseWPF>
-	<UseWindowsForms>true</UseWindowsForms>
-    <Platforms>AnyCPU;x64</Platforms>
-    <AssemblyName>VoicePhraseCast</AssemblyName>
-    <RootNamespace>VoicePhraseCast</RootNamespace>
-    <ApplicationIcon>VoicePhraseCast.ico</ApplicationIcon>
-	<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-	<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-	<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-  </PropertyGroup>
+	<PropertyGroup>
+		<OutputType>WinExe</OutputType>
+		<TargetFramework>net10.0-windows</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<UseWPF>true</UseWPF>
+		<UseWindowsForms>true</UseWindowsForms>
+		<Platforms>AnyCPU;x64</Platforms>
+		<AssemblyName>VoicePhraseCast</AssemblyName>
+		<RootNamespace>VoicePhraseCast</RootNamespace>
+		<ApplicationIcon>VoicePhraseCast.ico</ApplicationIcon>
+		<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+	</PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="FuzzySharp" Version="2.0.2" />
-    <PackageReference Include="InputSimulatorStandard" Version="1.0.0" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.30.0" />
-    <PackageReference Include="NAudio" Version="2.3.0" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="Vosk" Version="0.3.38" />
-  </ItemGroup>
+	<!-- N3: убраны InputSimulatorStandard (ввод идёт через SendInput), Newtonsoft.Json (разбор JSON Vosk на System.Text.Json)
+       и Microsoft.ML.OnnxRuntime (нигде не используется, тянул крупные нативные библиотеки). -->
+	<ItemGroup>
+		<PackageReference Include="FuzzySharp" Version="2.0.2" />
+		<PackageReference Include="NAudio" Version="2.3.0" />
+		<PackageReference Include="Vosk" Version="0.3.38" />
+	</ItemGroup>
 
-  <ItemGroup>
-    <Content Include="model\**\*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
+	<!-- N3: папка model\ больше не копируется в сборку: ModelManager сам скачивает модель в models\ при первом запуске
+       (и переносит старую model\ рядом с exe, если она там есть). Если хотите поставлять модель вместе с программой,
+       верните блок: <Content Include="models\**\*"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></Content> -->
 
-  <ItemGroup>
-    <None Remove="Resources\Winwyv_levelup_04_ru.mp3.mpeg" />
-  </ItemGroup>
+	<ItemGroup>
+		<None Remove="Resources\Winwyv_levelup_04_ru.mp3.mpeg" />
+	</ItemGroup>
 
-  <ItemGroup>
-    <Resource Include="Resources\VoicePhraseCast.ico">
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-    </Resource>
-    <Resource Include="Resources\Winwyv_levelup_04_ru.mp3.mpeg" />
-    <Content Include="VoicePhraseCast.ico" />
-  </ItemGroup>
+	<ItemGroup>
+		<Resource Include="Resources\VoicePhraseCast.ico">
+			<CopyToOutputDirectory>Never</CopyToOutputDirectory>
+		</Resource>
+		<Resource Include="Resources\Winwyv_levelup_04_ru.mp3.mpeg" />
+		<Content Include="VoicePhraseCast.ico" />
+	</ItemGroup>
 
-  <ItemGroup>
-    <Compile Update="Properties\Settings.Designer.cs">
-      <DesignTimeSharedInput>True</DesignTimeSharedInput>
-      <AutoGen>True</AutoGen>
-      <DependentUpon>Settings.settings</DependentUpon>
-    </Compile>
-  </ItemGroup>
+	<ItemGroup>
+		<Compile Update="Properties\Settings.Designer.cs">
+			<DesignTimeSharedInput>True</DesignTimeSharedInput>
+			<AutoGen>True</AutoGen>
+			<DependentUpon>Settings.settings</DependentUpon>
+		</Compile>
+	</ItemGroup>
 
-  <ItemGroup>
-    <None Update="Properties\Settings.settings">
-      <Generator>SettingsSingleFileGenerator</Generator>
-      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
-    </None>
-  </ItemGroup>
+	<ItemGroup>
+		<None Update="Properties\Settings.settings">
+			<Generator>SettingsSingleFileGenerator</Generator>
+			<LastGenOutput>Settings.Designer.cs</LastGenOutput>
+		</None>
+	</ItemGroup>
 
 </Project>

@@ -1,13 +1,19 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
-using System.Linq;
+using System.IO.Compression;
+using System.Net.Http;
 
 namespace VoicePhraseCast
 {
+    /// <summary>
+    /// Поиск, проверка и скачивание моделей Vosk. Не создаёт Vosk.Model: владение нативной моделью лежит на BridgeController.
+    /// Конструктор ничего не делает с диском; миграцию старой папки model/ выполняет RunMigrationAsync (вне UI-потока).
+    /// </summary>
     public class ModelManager
     {
+        public const string DefaultModelName = "vosk-model-small-ru-0.22";
+        private const string DefaultModelUrl = "https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip";
+
         private readonly string _modelsDirectory;
         private readonly string _legacyModelDirectory;
 
@@ -16,70 +22,58 @@ namespace VoicePhraseCast
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             _modelsDirectory = Path.Combine(baseDir, "models");
             _legacyModelDirectory = Path.Combine(baseDir, "model");
-
-            InitializeDirectoriesAndMigrate();
         }
 
+        public string ModelsDirectory => _modelsDirectory;
+
         /// <summary>
-        /// Создает целевую папку models/ и выполняет миграцию старой папки model/, если она существует и валидна.
+        /// Создаёт папку models/ и переносит валидную legacy-папку model/ внутрь неё.
+        /// Ничего не удаляется: если целевая папка занята, старая получает имя model.migrated-{время}, и пользователь удалит её сам.
         /// </summary>
-        private void InitializeDirectoriesAndMigrate()
+        public Task RunMigrationAsync() => Task.Run(() =>
         {
             try
             {
-                if (!Directory.Exists(_modelsDirectory))
+                Directory.CreateDirectory(_modelsDirectory);
+
+                if (!Directory.Exists(_legacyModelDirectory) || !IsValidModelFolder(_legacyModelDirectory))
+                    return;
+
+                string target = Path.Combine(_modelsDirectory, DefaultModelName);
+                if (!Directory.Exists(target))
                 {
-                    Directory.CreateDirectory(_modelsDirectory);
+                    Directory.Move(_legacyModelDirectory, target);
+                    Debug.WriteLine($"[ModelManager] Модель из model/ перенесена в: {target}");
                 }
-
-                // Проверяем существование legacy-папки model/
-                if (Directory.Exists(_legacyModelDirectory))
+                else
                 {
-                    if (IsValidModelFolder(_legacyModelDirectory))
-                    {
-                        string targetMigrationPath = Path.Combine(_modelsDirectory, "vosk-model-small-ru-0.22");
-
-                        // Переносим только если целевая папка еще не существует
-                        if (!Directory.Exists(targetMigrationPath))
-                        {
-                            Directory.Move(_legacyModelDirectory, targetMigrationPath);
-                            Debug.WriteLine($"[ModelManager] Легаси модель успешно перенесена в: {targetMigrationPath}");
-                        }
-                        else
-                        {
-                            // Если новая папка уже есть, просто очищаем старую легаси-директорию
-                            Directory.Delete(_legacyModelDirectory, true);
-                            Debug.WriteLine("[ModelManager] Найдена дублирующая легаси папка model/. Старая папка удалена.");
-                        }
-                    }
+                    string backup = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
+                                                 $"model.migrated-{DateTime.Now:yyyyMMddHHmmss}");
+                    Directory.Move(_legacyModelDirectory, backup);
+                    Debug.WriteLine($"[ModelManager] Папка model/ переименована в {backup}: ничего не удалено.");
                 }
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"[ModelManager Migration Error] {ex.Message}");
             }
-        }
+        });
 
-        /// <summary>
-        /// Сканирует папку models/ и возвращает список путей ко всем валидным моделям Vosk.
-        /// </summary>
+        /// <summary>Сканирует models/ и возвращает пути ко всем валидным моделям.</summary>
         public List<string> GetAvailableModels()
         {
-            var validModels = new List<string>();
-
-            if (!Directory.Exists(_modelsDirectory))
-                return validModels;
+            var valid = new List<string>();
+            if (!Directory.Exists(_modelsDirectory)) return valid;
 
             try
             {
-                var subdirectories = Directory.GetDirectories(_modelsDirectory);
-
-                foreach (var dir in subdirectories)
+                foreach (string dir in Directory.GetDirectories(_modelsDirectory).OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
                 {
-                    if (IsValidModelFolder(dir))
-                    {
-                        validModels.Add(dir);
-                    }
+                    // Служебные папки скачивания и импорта могут остаться после аварийного завершения и выглядеть как валидная модель.
+                    string name = Path.GetFileName(dir);
+                    if (name.StartsWith('.') || name.Equals("temp_model", StringComparison.OrdinalIgnoreCase)) continue;
+
+                    if (IsValidModelFolder(dir)) valid.Add(dir);
                 }
             }
             catch (Exception ex)
@@ -87,86 +81,176 @@ namespace VoicePhraseCast
                 Debug.WriteLine($"[ModelManager Scan Error] {ex.Message}");
             }
 
-            return validModels;
+            return valid;
         }
 
         /// <summary>
-        /// Проверяет, содержит ли указанная директория обязательные составляющие Vosk (папки conf и am).
+        /// Папка считается моделью, если есть conf/model.conf и am/final.mdl. Одной проверки наличия папок conf и am мало:
+        /// недокачанная модель их уже содержит, а Vosk.Model на ней падает.
         /// </summary>
         public bool IsValidModelFolder(string folderPath)
         {
             if (string.IsNullOrWhiteSpace(folderPath) || !Directory.Exists(folderPath))
                 return false;
 
-            string confPath = Path.Combine(folderPath, "conf");
-            string amPath = Path.Combine(folderPath, "am");
-
-            return Directory.Exists(confPath) && Directory.Exists(amPath);
+            return File.Exists(Path.Combine(folderPath, "conf", "model.conf"))
+                && File.Exists(Path.Combine(folderPath, "am", "final.mdl"));
         }
 
+        /// <summary>
+        /// Возвращает путь к модели, которую можно загружать: сохранённая в настройках, первая из models/ или свежескачанная.
+        /// Не бросает исключений: при сбое сети или распаковки возвращает null, а причину передаёт в statusCallback.
+        /// Настройка SelectedModelPath здесь НЕ записывается: её сохраняет владелец после успешной загрузки Vosk.Model.
+        /// </summary>
         public async Task<string?> EnsureModelAvailableAsync(Action<string>? statusCallback = null)
         {
-            var available = GetAvailableModels();
-
-            // 1. Проверяем сохраненный путь в Settings
-            string savedPath = Properties.Settings.Default.SelectedModelPath;
-            if (!string.IsNullOrWhiteSpace(savedPath) && IsValidModelFolder(savedPath))
+            try
             {
-                return savedPath;
-            }
+                await RunMigrationAsync().ConfigureAwait(false);
 
-            // 2. Если в настройках ничего нет, но есть хотя бы одна валидная модель в models/
-            if (available.Count > 0)
+                string saved = Properties.Settings.Default.SelectedModelPath;
+                if (!string.IsNullOrWhiteSpace(saved) && IsValidModelFolder(saved))
+                    return saved;
+
+                var available = GetAvailableModels();
+                if (available.Count > 0)
+                    return available[0];
+
+                string target = Path.Combine(_modelsDirectory, DefaultModelName);
+                await DownloadDefaultModelAsync(target, statusCallback).ConfigureAwait(false);
+
+                return IsValidModelFolder(target) ? target : null;
+            }
+            catch (Exception ex)
             {
-                string defaultPath = available[0];
-                Properties.Settings.Default.SelectedModelPath = defaultPath;
-                Properties.Settings.Default.Save();
-                return defaultPath;
+                Debug.WriteLine($"[ModelManager] {ex}");
+                statusCallback?.Invoke($"Не удалось подготовить модель: {ex.Message}");
+                return null;
             }
-
-            // 3. Если моделей нет вообще — скачиваем дефолтную
-            string targetFolder = Path.Combine(_modelsDirectory, "vosk-model-small-ru-0.22");
-            await DownloadDefaultModelAsync(targetFolder, statusCallback);
-
-            if (IsValidModelFolder(targetFolder))
-            {
-                Properties.Settings.Default.SelectedModelPath = targetFolder;
-                Properties.Settings.Default.Save();
-                return targetFolder;
-            }
-
-            return null;
         }
 
         private async Task DownloadDefaultModelAsync(string targetFolder, Action<string>? statusCallback)
         {
+            Directory.CreateDirectory(_modelsDirectory);
+
             string zipPath = Path.Combine(_modelsDirectory, "vosk_model.zip");
             string tempExtractPath = Path.Combine(_modelsDirectory, "temp_model");
-            const string url = "https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip";
 
-            statusCallback?.Invoke("Модели отсутствуют. Скачивание бакаут-модели (около 50 МБ)...");
+            statusCallback?.Invoke("Модели отсутствуют. Скачивание базовой модели (около 50 МБ)...");
 
-            using (var client = new System.Net.Http.HttpClient())
+            try
             {
-                var response = await client.GetAsync(url);
-                response.EnsureSuccessStatusCode();
-                using (var fs = new FileStream(zipPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                // Таймаут по умолчанию (100 с) обрывал бы медленную загрузку, а ResponseHeadersRead не буферизует архив в памяти.
+                using (var client = new HttpClient { Timeout = Timeout.InfiniteTimeSpan })
+                using (var response = await client.GetAsync(DefaultModelUrl, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false))
                 {
-                    await response.Content.CopyToAsync(fs);
+                    response.EnsureSuccessStatusCode();
+                    long? total = response.Content.Headers.ContentLength;
+
+                    await using var source = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                    await using var destination = new FileStream(zipPath, FileMode.Create, FileAccess.Write, FileShare.None,
+                                                                 bufferSize: 81920, useAsync: true);
+
+                    var buffer = new byte[81920];
+                    long done = 0;
+                    int read;
+                    int lastPercent = -1;
+                    while ((read = await source.ReadAsync(buffer.AsMemory(0, buffer.Length)).ConfigureAwait(false)) > 0)
+                    {
+                        await destination.WriteAsync(buffer.AsMemory(0, read)).ConfigureAwait(false);
+                        done += read;
+
+                        if (total is > 0)
+                        {
+                            int percent = (int)(done * 100 / total.Value);
+                            if (percent != lastPercent && percent % 5 == 0)
+                            {
+                                lastPercent = percent;
+                                statusCallback?.Invoke($"Скачивание модели: {percent}%");
+                            }
+                        }
+                    }
                 }
+
+                statusCallback?.Invoke("Распаковка модели ИИ...");
+
+                // Распаковка и перенос идут в пуле потоков, а не в UI-потоке после await.
+                await Task.Run(() =>
+                {
+                    if (Directory.Exists(tempExtractPath)) Directory.Delete(tempExtractPath, true);
+                    ZipFile.ExtractToDirectory(zipPath, tempExtractPath);
+
+                    string[] extracted = Directory.GetDirectories(tempExtractPath);
+                    string inner = extracted.Length > 0
+                        ? extracted[0]
+                        : throw new InvalidDataException("Архив модели пуст или имеет неожиданную структуру.");
+
+                    if (Directory.Exists(targetFolder)) Directory.Delete(targetFolder, true);
+                    Directory.Move(inner, targetFolder);
+                }).ConfigureAwait(false);
             }
+            finally
+            {
+                // Временные файлы убираются при любом исходе, чтобы битый архив не оставался на диске.
+                TryDelete(() => { if (File.Exists(zipPath)) File.Delete(zipPath); });
+                TryDelete(() => { if (Directory.Exists(tempExtractPath)) Directory.Delete(tempExtractPath, true); });
+            }
+        }
 
-            statusCallback?.Invoke("Распаковка модели ИИ...");
+        /// <summary>Путь внутри models/, куда будет скопирована модель из sourceFolder (имя папки сохраняется).</summary>
+        public string GetImportTarget(string sourceFolder) =>
+            Path.Combine(_modelsDirectory, Path.GetFileName(Path.TrimEndingDirectorySeparator(sourceFolder)));
 
-            if (Directory.Exists(tempExtractPath)) Directory.Delete(tempExtractPath, true);
-            System.IO.Compression.ZipFile.ExtractToDirectory(zipPath, tempExtractPath);
+        /// <summary>
+        /// Копирует модель в models/ через временную папку: недокопированная модель не появляется в списке,
+        /// а при сбое (нет места, файл занят) прежняя модель с тем же именем остаётся нетронутой до самого переноса.
+        /// </summary>
+        public Task ImportModelAsync(string sourceFolder, string targetFolder, bool overwrite) => Task.Run(() =>
+        {
+            Directory.CreateDirectory(_modelsDirectory);
+            string staging = Path.Combine(_modelsDirectory, ".import-" + Guid.NewGuid().ToString("N"));
 
-            string innerFolder = Directory.GetDirectories(tempExtractPath)[0];
-            if (Directory.Exists(targetFolder)) Directory.Delete(targetFolder, true);
-            Directory.Move(innerFolder, targetFolder);
+            try
+            {
+                CopyDirectory(sourceFolder, staging);
+                if (!IsValidModelFolder(staging))
+                    throw new InvalidDataException("Копия модели получилась неполной.");
 
-            if (File.Exists(zipPath)) File.Delete(zipPath);
-            if (Directory.Exists(tempExtractPath)) Directory.Delete(tempExtractPath, true);
+                if (Directory.Exists(targetFolder))
+                {
+                    if (!overwrite) throw new IOException("Папка модели с таким именем уже существует.");
+                    Directory.Delete(targetFolder, true);
+                }
+
+                Directory.Move(staging, targetFolder);
+            }
+            finally
+            {
+                TryDelete(() => { if (Directory.Exists(staging)) Directory.Delete(staging, true); });
+            }
+        });
+
+        private static void CopyDirectory(string sourceDir, string destinationDir)
+        {
+            Directory.CreateDirectory(destinationDir);
+
+            foreach (string file in Directory.GetFiles(sourceDir))
+                File.Copy(file, Path.Combine(destinationDir, Path.GetFileName(file)), true);
+
+            foreach (string sub in Directory.GetDirectories(sourceDir))
+                CopyDirectory(sub, Path.Combine(destinationDir, Path.GetFileName(sub)));
+        }
+
+        private static void TryDelete(Action delete)
+        {
+            try
+            {
+                delete();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ModelManager Cleanup] {ex.Message}");
+            }
         }
     }
 }
